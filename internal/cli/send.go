@@ -39,7 +39,10 @@ type composeOptions struct {
 type originalMessage struct {
 	Parsed     mimeparse.Result
 	ReplyTo    []mail.Address
+	To         []mail.Address
+	Cc         []mail.Address
 	References []string
+	Warnings   []string
 }
 
 var messageIDPattern = regexp.MustCompile(`<([^<>\s]+)>`)
@@ -69,8 +72,10 @@ func newSendCommand(rt *Runtime) *cobra.Command {
 
 func newReplyCommand(rt *Runtime) *cobra.Command {
 	var opts composeOptions
+	var replyAll bool
 	cmd := &cobra.Command{Use: "reply <id>", Args: cobra.ExactArgs(1), Short: "Reply with correct thread headers; dry-run by default"}
 	addComposeFlags(cmd, &opts, false, false)
+	cmd.Flags().BoolVar(&replyAll, "reply-all", false, "also address the original To/Cc recipients (minus your own address)")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if opts.Execute {
 			if err := policy.RequireMutationAllowed(); err != nil {
@@ -109,10 +114,20 @@ func newReplyCommand(rt *Runtime) *cobra.Command {
 		if len(to) == 0 {
 			return &errmap.Error{Kind: errmap.ParseError, Message: "原邮件没有可用的回复地址"}
 		}
-		cc, err := parseAddresses(opts.Cc)
+		cc := []mail.Address{}
+		if replyAll {
+			// Reply-all extends the reply semantics (Reply-To, default From)
+			// with the original To/Cc; the original Bcc never takes part.
+			to, cc = mergeReplyAll(named.Email, to, original.To, original.Cc)
+			if len(to)+len(cc) == 0 {
+				return &errmap.Error{Kind: errmap.Usage, Message: "reply-all 合并后没有收件人（原邮件只发给你自己）"}
+			}
+		}
+		extra, err := parseAddresses(opts.Cc)
 		if err != nil {
 			return err
 		}
+		cc = append(cc, extra...)
 		bcc, err := parseAddresses(opts.Bcc)
 		if err != nil {
 			return err
@@ -387,7 +402,7 @@ func loadOriginal(rt *Runtime, id mailmodel.MsgID) (originalMessage, error) {
 	if parsed.Parser == "failed" {
 		return originalMessage{}, &errmap.Error{Kind: errmap.ParseError, Message: "原邮件 MIME 解析失败"}
 	}
-	result := originalMessage{Parsed: parsed, References: []string{}}
+	result := originalMessage{Parsed: parsed, References: []string{}, Warnings: []string{}}
 	message, readErr := mail.ReadMessage(strings.NewReader(string(raw)))
 	if readErr == nil {
 		if replyTo := message.Header.Get("Reply-To"); replyTo != "" {
@@ -395,6 +410,23 @@ func loadOriginal(rt *Runtime, id mailmodel.MsgID) (originalMessage, error) {
 				for _, value := range values {
 					result.ReplyTo = append(result.ReplyTo, *value)
 				}
+			}
+		}
+		for _, header := range []struct {
+			name string
+			into *[]mail.Address
+		}{{"To", &result.To}, {"Cc", &result.Cc}} {
+			value := message.Header.Get(header.name)
+			if value == "" {
+				continue
+			}
+			addresses, parseErr := mail.ParseAddressList(value)
+			if parseErr != nil {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("%s 头解析失败，已按空处理：%v", header.name, parseErr))
+				continue
+			}
+			for _, address := range addresses {
+				*header.into = append(*header.into, *address)
 			}
 		}
 		for _, match := range messageIDPattern.FindAllStringSubmatch(message.Header.Get("References"), -1) {
@@ -415,6 +447,30 @@ func modelAddresses(values []mailmodel.Address) []mail.Address {
 		}
 	}
 	return result
+}
+
+// mergeReplyAll expands a reply into a reply-all recipient set. Self is
+// dropped everywhere; dedupe is case-insensitive; original order is kept.
+// The original Bcc never reaches this function — it is not part of the
+// received envelope, and the test suite asserts that invariant.
+func mergeReplyAll(self string, replyTo, origTo, origCc []mail.Address) (to, cc []mail.Address) {
+	key := func(a mail.Address) string { return strings.ToLower(strings.TrimSpace(a.Address)) }
+	selfKey := strings.ToLower(strings.TrimSpace(self))
+	seen := map[string]bool{}
+	add := func(list []mail.Address, into *[]mail.Address) {
+		for _, a := range list {
+			k := key(a)
+			if a.Address == "" || k == selfKey || seen[k] {
+				continue
+			}
+			seen[k] = true
+			*into = append(*into, a)
+		}
+	}
+	add(replyTo, &to)
+	add(origTo, &to)
+	add(origCc, &cc)
+	return to, cc
 }
 
 func prefixedSubject(subject, prefix string) string {
