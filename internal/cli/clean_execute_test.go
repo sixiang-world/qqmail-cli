@@ -33,6 +33,9 @@ func (f fakeCleanMutator) FetchEnvelopes(_ context.Context, folder string, uidVa
 func (f fakeCleanMutator) FetchHeaderFields(context.Context, []uint32) ([]mailmodel.HeaderFields, error) {
 	return []mailmodel.HeaderFields{{UID: 1, MessageID: "<fixture@example.com>"}}, nil
 }
+func (f fakeCleanMutator) SetFlags(context.Context, mailmodel.MsgID, []string, []string) error {
+	return nil
+}
 func (f fakeCleanMutator) MoveUID(_ context.Context, id mailmodel.MsgID, destination string) (imapx.MutationResult, error) {
 	*f.moved = append(*f.moved, id.String()+"->"+destination)
 	return imapx.MutationResult{Method: "uid_move", Destination: destination, DestinationVerified: true}, nil

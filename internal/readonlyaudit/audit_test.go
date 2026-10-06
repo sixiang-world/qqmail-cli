@@ -74,7 +74,7 @@ func TestGoIMAPMutationCallsAreConfinedToMutationBoundary(t *testing.T) {
 
 func TestMutationBoundaryCanOnlyBeCalledByPolicy(t *testing.T) {
 	root := projectRoot(t)
-	mutationMethods := map[string]bool{"SetSeen": true, "MoveUID": true, "CopyMarkDeletedUID": true}
+	mutationMethods := map[string]bool{"SetSeen": true, "SetFlags": true, "MoveUID": true, "CopyMarkDeletedUID": true}
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return err

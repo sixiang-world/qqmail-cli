@@ -36,6 +36,9 @@ func (f *fakeMutator) SetSeen(context.Context, mailmodel.MsgID) error {
 	f.seenCalls++
 	return nil
 }
+func (f *fakeMutator) SetFlags(context.Context, mailmodel.MsgID, []string, []string) error {
+	return nil
+}
 func (f *fakeMutator) MoveUID(context.Context, mailmodel.MsgID, string) (imapx.MutationResult, error) {
 	f.moveCalls++
 	return imapx.MutationResult{Method: "uid_move"}, nil

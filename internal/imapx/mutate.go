@@ -23,6 +23,7 @@ import (
 type Mutator interface {
 	Reader
 	SetSeen(context.Context, mailmodel.MsgID) error
+	SetFlags(context.Context, mailmodel.MsgID, []string, []string) error
 	MoveUID(context.Context, mailmodel.MsgID, string) (MutationResult, error)
 	CopyMarkDeletedUID(context.Context, mailmodel.MsgID, string, MessageIdentity) (MutationResult, error)
 	LocateByIdentity(context.Context, string, MessageIdentity) ([]mailmodel.MsgID, error)
@@ -62,6 +63,36 @@ func (c *Client) SetSeen(ctx context.Context, id mailmodel.MsgID) error {
 	defer stop()
 	command := c.raw.Store(imap.UIDSetNum(imap.UID(id.UID)), &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagSeen}}, nil)
 	return command.Close()
+}
+
+// SetFlags adds or removes flags on one message. Exactly one of add/remove
+// must be non-empty; policy layer owns the \Flagged/\Seen vocabulary.
+func (c *Client) SetFlags(ctx context.Context, id mailmodel.MsgID, add, remove []string) error {
+	if (len(add) == 0) == (len(remove) == 0) {
+		return &errmap.Error{Kind: errmap.Usage, Message: "SetFlags 要求 add/remove 恰一非空"}
+	}
+	if err := c.selectWritable(ctx, id); err != nil {
+		return err
+	}
+	if err := c.setDeadline(ctx); err != nil {
+		return err
+	}
+	stop := c.watchdog(ctx)
+	defer stop()
+	op, flags := imap.StoreFlagsAdd, toFlagList(add)
+	if len(remove) > 0 {
+		op, flags = imap.StoreFlagsDel, toFlagList(remove) // beta.8 常量名是 StoreFlagsDel
+	}
+	command := c.raw.Store(imap.UIDSetNum(imap.UID(id.UID)), &imap.StoreFlags{Op: op, Silent: true, Flags: flags}, nil)
+	return command.Close()
+}
+
+func toFlagList(names []string) []imap.Flag {
+	out := make([]imap.Flag, 0, len(names))
+	for _, n := range names {
+		out = append(out, imap.Flag(n))
+	}
+	return out
 }
 
 func (c *Client) MoveUID(ctx context.Context, id mailmodel.MsgID, destination string) (MutationResult, error) {

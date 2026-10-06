@@ -99,6 +99,9 @@ func (m fakeRestoreMutator) FetchBodyPeek(_ context.Context, id mailmodel.MsgID,
 	return m.fakeReader.FetchBodyPeek(context.Background(), id, maxBytes)
 }
 func (m fakeRestoreMutator) SetSeen(context.Context, mailmodel.MsgID) error { return nil }
+func (m fakeRestoreMutator) SetFlags(context.Context, mailmodel.MsgID, []string, []string) error {
+	return nil
+}
 func (m fakeRestoreMutator) MoveUID(context.Context, mailmodel.MsgID, string) (imapx.MutationResult, error) {
 	return imapx.MutationResult{Method: "uid_move", DestinationVerified: true}, nil
 }
