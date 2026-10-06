@@ -505,7 +505,7 @@ func loadInlineAttachments(paths []string, bodyFormat string, loaded int64) ([]s
 			return nil, err
 		}
 		if previous, duplicate := derived[id]; duplicate {
-			return nil, &errmap.Error{Kind: errmap.Usage, Message: fmt.Sprintf("内嵌附件 %q 与 %q 同名：派生出相同的 Content-ID %q", previous, path, id), Suggestion: "HTML 正文按文件名以 cid: 引用内嵌图，--attach-inline 的文件名必须互不相同；请重命名其中一个文件后重试"}
+			return nil, &errmap.Error{Kind: errmap.Usage, Message: fmt.Sprintf("内嵌附件 %q 与 %q 同名：派生出相同的 Content-ID %q", previous, path, id), Suggestion: "HTML 正文按文件名以 cid:<文件名@qqmail-cli.local> 引用内嵌图（Content-ID 为 <文件名@qqmail-cli.local>，dry-run 预览会列出每个文件的确切引用），--attach-inline 的文件名必须互不相同；请重命名其中一个文件后重试"}
 		}
 		derived[id] = path
 		contentIDs[i] = id
