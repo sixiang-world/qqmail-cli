@@ -52,7 +52,7 @@ func (r *serverRejectReader) Search(context.Context, imapx.SearchFilter) ([]uint
 
 func TestSearchServerRejectsWhenServerRefuses(t *testing.T) {
 	rejection := &errmap.Error{Kind: errmap.PolicyDenied,
-		Message:    "服务器拒绝了这个搜索条件（见 docs/compat/qq-20261006.md）",
+		Message:    "服务器拒绝了这个搜索条件（IMAP SEARCH 方言记录见 docs/compat/ 目录，专项记录待探针落档）",
 		Suggestion: "改用 --from/--subject 过滤，或 qqmail-cli sync 后 search --local"}
 	_, err := tryRunCLI(t, &serverRejectReader{err: rejection}, []string{"search", "发票", "--server", "--json"})
 	if err == nil {
@@ -64,7 +64,7 @@ func TestSearchServerRejectsWhenServerRefuses(t *testing.T) {
 	if code != 50 {
 		t.Fatalf("exit code %d, want 50 (policy_denied): %v", code, err)
 	}
-	if !strings.Contains(out.Message, "docs/compat/qq-20261006.md") || !strings.Contains(out.Suggestion, "search --local") {
+	if !strings.Contains(out.Message, "docs/compat/") || !strings.Contains(out.Suggestion, "search --local") {
 		t.Fatalf("rejection lost the doc reference or the local-search fallback: %+v", out)
 	}
 	// 安全不变量：查询词只进 SEARCH 命令，绝不回显在错误消息里

@@ -496,7 +496,8 @@ func TestAttachInlineFlagWiring(t *testing.T) {
 }
 
 // The Content-ID must be derived deterministically from the file name so the
-// cid:<filename> reference in the HTML body resolves on the receiving side:
+// cid:<filename@qqmail-cli.local> reference in the HTML body resolves on the
+// receiving side:
 // spaces become dashes, control characters/angle brackets/'@'/whitespace are
 // stripped, non-ASCII is kept, over-long names are truncated, and a name
 // without usable characters is a usage error instead of an empty localpart.

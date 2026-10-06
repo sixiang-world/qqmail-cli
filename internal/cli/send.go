@@ -485,8 +485,9 @@ func loadAttachmentFiles(paths []string, loaded int64) ([]sendmail.Attachment, e
 // non-html body format is a usage error — inline parts are meaningless without
 // cid: references; the files share the 20 MiB combined cap with --attach and
 // each gets a bare Content-ID derived deterministically from its file name, so
-// the cid:<filename> reference in the HTML body resolves on the receiving side.
-// Two files deriving the same id (same base name, or names that sanitize to
+// the cid:<filename@qqmail-cli.local> reference in the HTML body resolves on
+// the receiving side. Two files deriving the same id (same base name, or names
+// that sanitize to
 // the same id) are a usage error — a duplicate would leave one cid: reference
 // unresolvable, so there is no silent dedup.
 func loadInlineAttachments(paths []string, bodyFormat string, loaded int64) ([]sendmail.Attachment, error) {
@@ -527,7 +528,8 @@ const maxInlineContentIDBytes = 64
 
 // deriveInlineContentID derives a bare Content-ID ("localpart@qqmail-cli.local",
 // no angle brackets — Build wraps it when writing the header) from the file's
-// base name: the HTML body references the image as cid:<filename>, so the same
+// base name: the HTML body references the image as
+// cid:<filename@qqmail-cli.local>, so the same
 // file name must always yield the same resolvable id. Spaces become dashes;
 // control characters, other whitespace, angle brackets and '@' are stripped
 // (they would break the id@domain form or truncate the header value);

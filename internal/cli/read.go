@@ -149,7 +149,8 @@ func listEnvelopes(ctx context.Context, reader imapx.Reader, folder string, filt
 	if err != nil {
 		// A tagged NO/BAD on SEARCH is the server refusing our criteria, not a
 		// transient fault: report it as a policy denial so the agent adjusts
-		// the filter instead of retrying (docs/compat/qq-20261006.md).
+		// the filter instead of retrying (docs/compat/qq-20261006.md, pending
+		// the Task 0 probe archive).
 		return nil, 0, mode, imapx.WrapSearchReject(err)
 	}
 	windowMin := uint32(0)

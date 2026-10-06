@@ -386,7 +386,7 @@ HTML 正文里用 `cid:` 引用图片文件，图片随邮件作为内嵌部件�
 ```powershell
 @"
 <p>十月数据见图表：</p>
-<p><img src="cid:chart.png" alt="月度图表"></p>
+<p><img src="cid:chart.png@qqmail-cli.local" alt="月度图表"></p>
 "@ | Set-Content -Path .\body.html -Encoding UTF8
 
 .\bin\qqmail-cli.exe send --to allowed@example.com --subject "十月图表" `

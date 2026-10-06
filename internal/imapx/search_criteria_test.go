@@ -25,7 +25,8 @@ type searchWireFixture struct {
 
 	// rejectTextWithBad makes the fake answer a tagged BAD to any UID SEARCH
 	// carrying a TEXT criterion, simulating a server that refuses the search
-	// (docs/compat/qq-20261006.md). Set through a newFixture option before the
+	// (docs/compat/qq-20261006.md, pending the Task 0 probe archive). Set
+	// through a newFixture option before the
 	// connection is established.
 	rejectTextWithBad bool
 
@@ -155,7 +156,8 @@ func TestSearchSendsBeforeAndToCriteria(t *testing.T) {
 
 // A tagged BAD on a TEXT SEARCH is a completed server rejection, not a network
 // fault: through WrapSearchReject it must classify as policy_denied so agents
-// adjust the filter instead of retrying (docs/compat/qq-20261006.md).
+// adjust the filter instead of retrying (docs/compat/qq-20261006.md, pending
+// the Task 0 probe archive).
 func TestSearchServerRejectionMapsToPolicyDenied(t *testing.T) {
 	f := newFixture(t, func(f *searchWireFixture) { f.rejectTextWithBad = true })
 	_, err := f.Client.Search(context.Background(), SearchFilter{Text: "invoice"})

@@ -223,7 +223,7 @@ func (c *Client) Examine(ctx context.Context, folder string) (uint32, uint32, er
 	return selected.UIDValidity, selected.NumMessages, nil
 }
 
-// ServerSearchField 由 docs/compat/qq-20261006.md 的探测结论定案；见该文档。
+// ServerSearchField 由 docs/compat/qq-20261006.md 的探测结论定案；该文档待 Task 0 探针落档。
 const ServerSearchField = "TEXT"
 
 func (c *Client) Search(ctx context.Context, filter SearchFilter) ([]uint32, error) {

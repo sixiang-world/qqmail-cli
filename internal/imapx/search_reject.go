@@ -9,15 +9,15 @@ import (
 
 // WrapSearchReject converts a server NO/BAD rejection of a SEARCH command into
 // the PolicyDenied application error. Some servers (QQ included, see
-// docs/compat/qq-20261006.md) refuse search criteria they do not support; the
-// tagged status text survives as the cause so --verbose keeps the server's
-// own words. Network-class errors pass through unchanged, leaving the existing
-// retryable classification untouched.
+// docs/compat/qq-20261006.md — pending the Task 0 probe archive) refuse search
+// criteria they do not support; the tagged status text survives as the cause
+// so --verbose keeps the server's own words. Network-class errors pass through
+// unchanged, leaving the existing retryable classification untouched.
 func WrapSearchReject(err error) error {
 	var imapErr *imap.Error
 	if errors.As(err, &imapErr) && (imapErr.Type == imap.StatusResponseTypeNo || imapErr.Type == imap.StatusResponseTypeBad) {
 		return &errmap.Error{Kind: errmap.PolicyDenied,
-			Message:    "服务器拒绝了这个搜索条件（见 docs/compat/qq-20261006.md）",
+			Message:    "服务器拒绝了这个搜索条件（IMAP SEARCH 方言记录见 docs/compat/ 目录，专项记录待探针落档）",
 			Suggestion: "改用 --from/--subject 过滤，或 qqmail-cli sync 后 search --local", Cause: err}
 	}
 	return err

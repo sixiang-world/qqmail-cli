@@ -11,7 +11,8 @@ import (
 	"github.com/situker/qqmail-cli/internal/errmap"
 )
 
-// Pinned classification semantics (docs/compat/qq-20261006.md): only a
+// Pinned classification semantics (docs/compat/qq-20261006.md, pending the
+// Task 0 probe archive): only a
 // completed server rejection — a tagged NO/BAD status response — maps to
 // policy_denied. Network-class errors pass through unchanged so the existing
 // retryable classification survives untouched.

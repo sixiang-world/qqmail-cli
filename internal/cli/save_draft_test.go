@@ -223,7 +223,7 @@ func TestSaveDraftCombinesWithAttachments(t *testing.T) {
 		smtpCalls := 0
 		rt, _, stderr := newSaveDraftRuntime(t, stub, &smtpCalls, "1\n", true)
 		configPath := saveSendConfig(t, []string{"allowed@example.com"})
-		if err := runSaveDraftRoot(t, rt, configPath, "--json", "send", "--to", "allowed@example.com", "--subject", "s", "--body-format", "html", "--body", `<p>hi</p><img src="cid:logo">`, "--attach-inline", png, "--save-draft", "--execute"); err != nil {
+		if err := runSaveDraftRoot(t, rt, configPath, "--json", "send", "--to", "allowed@example.com", "--subject", "s", "--body-format", "html", "--body", `<p>hi</p><img src="cid:logo.png@qqmail-cli.local">`, "--attach-inline", png, "--save-draft", "--execute"); err != nil {
 			t.Fatalf("attach-inline save-draft failed: %v (stderr=%s)", err, stderr.String())
 		}
 		if len(stub.appends) != 1 {

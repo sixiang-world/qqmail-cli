@@ -38,7 +38,8 @@ func runServerSearch(rt *Runtime, cmd *cobra.Command, query string, limit int) e
 	if err != nil {
 		// A tagged NO/BAD is the server refusing the search criterion, not a
 		// transient fault: report it as a policy denial so the agent switches
-		// strategy instead of retrying (docs/compat/qq-20261006.md). Network-
+		// strategy instead of retrying (docs/compat/qq-20261006.md, pending
+		// the Task 0 probe archive). Network-
 		// class errors pass through unchanged to the existing classification.
 		return imapx.WrapSearchReject(err)
 	}

@@ -53,8 +53,9 @@ All notable development changes are recorded here. Formal releases remain owner-
   plain text (`body_preview`) for human review. Send-class gates unchanged.
 - `send`/`reply`/`forward --attach-inline`: inline images referenced by
   `cid:` from the HTML body are sent as inline parts of a multipart/related
-  structure with generated bare Content-IDs (listed per file in the dry-run
-  preview and in `summary.attachments[].content_id`). Requires
+  structure with Content-IDs deterministically derived from each file's base
+  name (listed per file in the dry-run preview and in
+  `summary.attachments[].content_id`). Requires
   `--body-format html` (usage error otherwise) and shares the 20 MiB combined
   attachment cap with `--attach` (exit 50 when exceeded). Send-class gates
   unchanged.
