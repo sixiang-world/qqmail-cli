@@ -13,6 +13,7 @@ import (
 	"github.com/situker/qqmail-cli/internal/errmap"
 	"github.com/situker/qqmail-cli/internal/imapx"
 	"github.com/situker/qqmail-cli/internal/index"
+	"github.com/situker/qqmail-cli/internal/mailmodel"
 	"github.com/situker/qqmail-cli/internal/secrets"
 	"github.com/situker/qqmail-cli/internal/sendmail"
 )
@@ -166,6 +167,63 @@ func TestReplyAndForwardBuildExpectedThreading(t *testing.T) {
 				t.Fatal("transport was not called")
 			}
 		})
+	}
+}
+
+// relatedMailReader serves a multipart/related fixture (HTML body referencing
+// a CID image plus an inline image/png leaf part) so forward can prove inline
+// parts are re-attached instead of dropped.
+type relatedMailReader struct{ fakeReader }
+
+func (relatedMailReader) FetchBodyPeek(context.Context, mailmodel.MsgID, int64) ([]byte, bool, error) {
+	return []byte("From: sender@example.com\r\n" +
+		"Subject: fixture\r\n" +
+		"Message-ID: <fixture@example.com>\r\n" +
+		"MIME-Version: 1.0\r\n" +
+		"Content-Type: multipart/related; boundary=\"r1\"\r\n\r\n" +
+		"--r1\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>see the picture</p><img src=\"cid:image001\">\r\n" +
+		"--r1\r\nContent-Type: image/png\r\nContent-Disposition: inline; filename=\"image001.png\"\r\nContent-ID: <image001>\r\nContent-Transfer-Encoding: base64\r\n\r\naW1hZ2UwMDE=\r\n" +
+		"--r1--\r\n"), false, nil
+}
+
+// Forward must re-attach inline non-text parts (CID images) parsed from the
+// original mail; before the mimeparse fix these were silently skipped and a
+// forwarded mail lost its pictures. The envelope has_attachments stays
+// hard-coded false (guard-encoded, see docs/compat/qq-20260902.md); the
+// attachment list is the source of truth.
+func TestForwardCarriesInlineImages(t *testing.T) {
+	t.Setenv("QQMAIL_CLI_READONLY", "0")
+	configPath := saveSendConfig(t, []string{"reader@example.com"})
+	cachePath := filepath.Join(t.TempDir(), "cache.db")
+	id := "m1_eyJmIjoiSU5CT1giLCJ2IjoxLCJ1IjoxfQ"
+	called := false
+	rt := &Runtime{
+		Out: &bytes.Buffer{}, Err: &bytes.Buffer{}, In: strings.NewReader("SEND\n"),
+		Secrets:    &secrets.Memory{Values: map[string]string{"user@qq.com": testAuthCode}},
+		IsTerminal: func(io.Reader) bool { return true },
+		Dial:       func(context.Context, account.Named, string) (imapx.Reader, error) { return relatedMailReader{}, nil },
+		IndexOpen: func(_ string, write bool) (*index.DB, error) {
+			return index.OpenPath(cachePath, write)
+		},
+		SendMail: func(_ context.Context, _ account.Named, _ string, draft sendmail.Draft, _ []byte) error {
+			called = true
+			if len(draft.Attachments) != 1 {
+				t.Fatalf("forward dropped inline images: %d attachments", len(draft.Attachments))
+			}
+			att := draft.Attachments[0]
+			if att.Filename != "image001.png" || att.ContentType != "image/png" || len(att.Data) == 0 {
+				t.Fatalf("unexpected forwarded attachment: %+v", att)
+			}
+			return nil
+		},
+	}
+	root := NewRoot(rt)
+	root.SetArgs([]string{"--config", configPath, "forward", id, "--to", "reader@example.com", "--body", "FYI", "--execute"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("transport was not called")
 	}
 }
 

@@ -24,6 +24,68 @@ func TestParseChineseMultipart(t *testing.T) {
 	}
 }
 
+// synthRelatedMail builds a fully synthetic multipart/related mail: a
+// text/html body that references a CID image plus an inline image/png leaf
+// part carrying Content-ID: <image001> and a filename.
+func synthRelatedMail(t *testing.T) []byte {
+	t.Helper()
+	return []byte(strings.Join([]string{
+		"From: sender@example.com",
+		"To: receiver@qq.com",
+		"Subject: related fixture",
+		"MIME-Version: 1.0",
+		`Content-Type: multipart/related; boundary="r"`,
+		"", "--r", `Content-Type: text/html; charset="UTF-8"`, "",
+		`<p>see the picture</p><img src="cid:image001">`,
+		"--r", `Content-Type: image/png`,
+		`Content-Disposition: inline; filename="image001.png"`,
+		"Content-ID: <image001>",
+		"Content-Transfer-Encoding: base64", "", "aW1hZ2UwMDE=",
+		"--r--", "",
+	}, "\r\n"))
+}
+
+func TestParseInlineImageBecomesAttachment(t *testing.T) {
+	raw := synthRelatedMail(t)
+	result := Parse(raw)
+	if len(result.Attachments) != 1 {
+		t.Fatalf("want 1 attachment, got %d", len(result.Attachments))
+	}
+	att := result.Attachments[0]
+	if att.ContentType != "image/png" || att.ContentID != "image001" || att.Filename != "image001.png" {
+		t.Fatalf("attachment: %+v", att)
+	}
+	if att.Size == 0 || len(att.Data) == 0 {
+		t.Fatalf("inline part content lost: size=%d data=%d", att.Size, len(att.Data))
+	}
+}
+
+func TestParseInlinePartFilenameFallbacks(t *testing.T) {
+	raw := strings.Join([]string{
+		"From: sender@example.com",
+		"To: receiver@qq.com",
+		"Subject: inline fallbacks",
+		"MIME-Version: 1.0",
+		`Content-Type: multipart/related; boundary="r"`,
+		"", "--r", `Content-Type: text/html; charset="UTF-8"`, "", "<p>body</p>",
+		"--r", `Content-Type: image/png; name="named.png"`, "Content-Disposition: inline", "", "aQ==",
+		"--r", `Content-Type: image/png`, "Content-Disposition: inline", "Content-ID: <anon>", "", "aQ==",
+		"--r--", "",
+	}, "\r\n")
+	got := Parse([]byte(raw))
+	if len(got.Attachments) != 2 {
+		t.Fatalf("want 2 attachments, got %d", len(got.Attachments))
+	}
+	// No Content-Disposition filename: fall back to Content-Type name, then to
+	// inline-<index> (the same value as the stable MIME traversal Index).
+	if got.Attachments[0].Filename != "named.png" || got.Attachments[1].Filename != "inline-2" {
+		t.Fatalf("filename fallback wrong: %#v", got.Attachments)
+	}
+	if got.Attachments[1].ContentID != "anon" {
+		t.Fatalf("content id wrong: %#v", got.Attachments[1])
+	}
+}
+
 func TestParseQuotedEncodedDisplayName(t *testing.T) {
 	raw := []byte("From: \"=?UTF-8?B?5byg5LiJ?=\" <sender@example.com>\r\nTo: receiver@qq.com\r\nSubject: fixture\r\n\r\nbody\r\n")
 	got := Parse(raw)

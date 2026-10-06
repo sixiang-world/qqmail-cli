@@ -76,7 +76,7 @@ func parseGoMessage(raw []byte) (Result, error) {
 		}
 		switch header := part.Header.(type) {
 		case *messagemail.InlineHeader:
-			mediaType, _, _ := header.ContentType()
+			mediaType, params, _ := header.ContentType()
 			switch strings.ToLower(mediaType) {
 			case "text/plain":
 				if result.Text == nil {
@@ -88,6 +88,25 @@ func parseGoMessage(raw []byte) (Result, error) {
 					value := SanitizeHTML(string(content))
 					result.HTML = &value
 				}
+			default:
+				// Inline non-text leaf part (typically a CID image). go-message
+				// v0.18.2 InlineHeader has no Filename(): derive the name from
+				// ContentDisposition params["filename"], fall back to ContentType
+				// params["name"], then to inline-<index>.
+				_, dispParams, _ := header.ContentDisposition()
+				filename := dispParams["filename"]
+				if filename == "" {
+					filename = params["name"]
+				}
+				if filename == "" {
+					filename = fmt.Sprintf("inline-%d", attachmentIndex)
+				}
+				contentID := strings.Trim(header.Get("Content-Id"), "<>")
+				result.Attachments = append(result.Attachments, mailmodel.Attachment{
+					Index: attachmentIndex, Filename: filename, ContentType: mediaType,
+					Size: int64(len(content)), ContentID: contentID, Data: content, // content is the value read above; part.Body is already consumed
+				})
+				attachmentIndex++
 			}
 		case *messagemail.AttachmentHeader:
 			filename, _ := header.Filename()
