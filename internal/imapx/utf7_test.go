@@ -40,7 +40,13 @@ func TestDecodeMailboxKnownVectors(t *testing.T) {
 }
 
 func TestDecodeMailboxRejectsMalformed(t *testing.T) {
-	for _, in := range []string{"&jSZTVQ", "&,,,,-"} {
+	// decodeRun's two hard failure branches, pinned so they cannot quietly
+	// widen into leniency:
+	//   &jSZTVQ=- / &jS=Z- — runs carrying base64 '=' padding (the modified
+	//   BASE64 alphabet is unpadded; base64.NoPadding decode rejects '=')
+	//   &abcde-            — a run whose base64 length mod 4 == 1 carries no
+	//   representable byte quantity (DecodeString fails outright)
+	for _, in := range []string{"&jSZTVQ", "&,,,,-", "&jSZTVQ=-", "&jS=Z-", "&abcde-"} {
 		if _, err := DecodeMailbox(in); err == nil {
 			t.Errorf("DecodeMailbox(%q) = nil error, want failure", in)
 		}
