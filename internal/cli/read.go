@@ -138,12 +138,18 @@ func listEnvelopes(ctx context.Context, reader imapx.Reader, folder string, filt
 		mode = "client_window"
 		searchFilter.From = ""
 		searchFilter.Subject = ""
+		searchFilter.To = ""
 	}
 	ids, err := reader.Search(ctx, searchFilter)
 	if err != nil && mode == "server" && (filter.From != "" || filter.Subject != "") {
+		// The server refused the composite criteria. The fallback strips To as
+		// well — a second SEARCH that still carries the refused criterion would
+		// be refused again — and every text criterion (To included) is
+		// re-applied client-side against the fetched window below.
 		mode = "client_window"
 		searchFilter.From = ""
 		searchFilter.Subject = ""
+		searchFilter.To = ""
 		ids, err = reader.Search(ctx, searchFilter)
 	}
 	if err != nil {
@@ -166,6 +172,9 @@ func listEnvelopes(ctx context.Context, reader imapx.Reader, folder string, filt
 	result := make([]mailmodel.Envelope, 0, len(items))
 	for _, item := range items {
 		if !filter.Since.IsZero() && item.InternalDate.Before(filter.Since) {
+			continue
+		}
+		if !filter.Before.IsZero() && item.InternalDate.After(filter.Before) {
 			continue
 		}
 		if !containsFold(item.Subject, filter.Subject) || !addressesContain(item.From, filter.From) || !addressesContain(item.To, filter.To) {
