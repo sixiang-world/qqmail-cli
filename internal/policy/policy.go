@@ -114,6 +114,35 @@ func (s *Service) MarkUnread(ctx context.Context, id mailmodel.MsgID, command, p
 	return err
 }
 
+// FlagMessage adds or removes \Flagged (QQ 星标). Starred mail is absolutely
+// excluded from clean plans, so removal lowers protection and the CLI says so.
+func (s *Service) FlagMessage(ctx context.Context, id mailmodel.MsgID, add bool, command, planRef string) error {
+	if err := RequireMutationAllowed(); err != nil {
+		return err
+	}
+	action := "flag_add"
+	if !add {
+		action = "flag_remove"
+	}
+	if err := s.record(ctx, command, action+"_attempt", id.String(), "attempt", planRef); err != nil {
+		return err
+	}
+	var err error
+	if add {
+		err = s.writer.SetFlags(ctx, id, []string{"\\Flagged"}, nil)
+	} else {
+		err = s.writer.SetFlags(ctx, id, nil, []string{"\\Flagged"})
+	}
+	result := "ok"
+	if err != nil {
+		result = "failed"
+	}
+	if auditErr := s.record(ctx, command, action, id.String(), result, planRef); auditErr != nil && err == nil {
+		return auditErr
+	}
+	return err
+}
+
 func (s *Service) Move(ctx context.Context, id mailmodel.MsgID, destination string, identity imapx.MessageIdentity, command, planRef string) (imapx.MutationResult, error) {
 	if err := RequireMutationAllowed(); err != nil {
 		return imapx.MutationResult{}, err

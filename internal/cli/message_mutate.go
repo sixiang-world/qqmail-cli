@@ -114,6 +114,97 @@ func newMessageMarkUnreadCommand(rt *Runtime) *cobra.Command {
 	return cmd
 }
 
+func newMessageFlagCommand(rt *Runtime) *cobra.Command {
+	var execute bool
+	var addValue string
+	var removeValue string
+	cmd := &cobra.Command{Use: "flag <id>...", Args: cobra.MinimumNArgs(1), Short: "Add or remove the star (\\Flagged); dry-run unless --execute is confirmed"}
+	cmd.Flags().StringVar(&addValue, "add", "", "add the star flag; v0.4 only accepts \\Flagged")
+	cmd.Flags().StringVar(&removeValue, "remove", "", "remove the star flag; v0.4 only accepts \\Flagged")
+	cmd.Flags().BoolVar(&execute, "execute", false, "perform after TTY count confirmation")
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		ids, err := parseMessageIDs(args)
+		if err != nil {
+			return err
+		}
+		if err := requireFolderConsistency(cmd, rt, ids); err != nil {
+			return err
+		}
+		add, err := resolveFlagOperation(addValue, removeValue)
+		if err != nil {
+			return err
+		}
+		operation := "add"
+		if !add {
+			operation = "remove"
+		}
+		extra := map[string]any{"action": "flag", "operation": operation, "flag": "\\Flagged"}
+		if !execute {
+			return writeMutationDryRun(rt, cmd, len(ids), extra)
+		}
+		if err := policy.RequireMutationAllowed(); err != nil {
+			return err
+		}
+		if add {
+			_, _ = fmt.Fprintf(rt.Err, "将给 %d 封邮件加星标。\n", len(ids))
+		} else {
+			_, _ = fmt.Fprintf(rt.Err, "将去掉 %d 封邮件的星标。\n", len(ids))
+			_, _ = fmt.Fprintln(rt.Err, "警告：去星后该邮件将失去清理计划的绝对排除保护。")
+		}
+		if err := confirmExactCount(rt, len(ids)); err != nil {
+			return err
+		}
+		ctx, cancel := rt.context()
+		defer cancel()
+		mutator, named, err := rt.connectMutator(ctx)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = mutator.Logout(context.Background()) }()
+		store, err := rt.IndexOpen(named.Name, true)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = store.Close() }()
+		service := policy.New(mutator, store)
+		completed := []string{}
+		warnings := []output.Warning{}
+		for _, id := range ids {
+			if err := service.FlagMessage(ctx, id, add, commandName(cmd), ""); err != nil {
+				failure, _ := errmap.Details(err)
+				warnings = append(warnings, output.Warning{Code: failure.Code, Message: failure.Message, ID: id.String(), Retryable: failure.Retryable})
+				continue
+			}
+			completed = append(completed, id.String())
+		}
+		return writeMutationResult(rt, cmd, named.Name, len(ids), completed, warnings, extra)
+	}
+	return cmd
+}
+
+// resolveFlagOperation enforces the v0.4 value whitelist for message flag:
+// --add/--remove accept only \Flagged, are mutually exclusive, and exactly one
+// of them is required. Starred mail is absolutely excluded from clean plans,
+// so any widening of this whitelist is a deliberate future decision.
+func resolveFlagOperation(addValue, removeValue string) (bool, error) {
+	addSet := addValue != ""
+	removeSet := removeValue != ""
+	if addSet && removeSet {
+		return false, &errmap.Error{Kind: errmap.Usage, Message: "--add 与 --remove 互斥，一次只能选择其一", Suggestion: "运行 qqmail-cli message flag --help 查看用法"}
+	}
+	if !addSet && !removeSet {
+		return false, &errmap.Error{Kind: errmap.Usage, Message: "必须提供 --add 或 --remove 之一", Suggestion: "运行 qqmail-cli message flag --help 查看用法"}
+	}
+	value := addValue
+	if removeSet {
+		value = removeValue
+	}
+	if value != `\Flagged` {
+		return false, &errmap.Error{Kind: errmap.Usage, Message: fmt.Sprintf("message flag 在 v0.4 仅支持星标，--add/--remove 只接受 \\Flagged，收到 %q", value), Suggestion: "只使用 --add \\Flagged 或 --remove \\Flagged"}
+	}
+	return addSet, nil
+}
+
 func newMessageMoveCommand(rt *Runtime) *cobra.Command {
 	var execute bool
 	cmd := &cobra.Command{Use: "move <id>... <folder>", Args: cobra.MinimumNArgs(2), Short: "Move messages; dry-run unless --execute is confirmed"}
