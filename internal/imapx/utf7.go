@@ -46,6 +46,12 @@ func EncodeMailbox(value string) string {
 	return out.String()
 }
 
+// DecodeMailbox is the display-side inverse of EncodeMailbox. Decoding is
+// intentionally lenient — it accepts some non-canonical inputs, such as runs
+// that decode to printable ASCII (canonical form requires those to be direct)
+// or unpaired surrogates (which surface as U+FFFD) — because it feeds folder
+// listing and display, not wire validation; protocol arguments must always be
+// built with EncodeMailbox.
 func DecodeMailbox(value string) (string, error) {
 	var out strings.Builder
 	for i := 0; i < len(value); {
