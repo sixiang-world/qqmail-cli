@@ -375,11 +375,13 @@ func TestBuildInlineImagesProducesRelated(t *testing.T) {
 	if !ok {
 		t.Fatal("want multipart/related")
 	}
-	if _, ok := findAlternativeIn(t, rel.parts[0]); !ok {
-		t.Fatal("related root must be the alternative")
-	}
+	// The parts-count guard comes first: a regression that drops a part would
+	// otherwise panic on parts[0] instead of failing with this message.
 	if len(rel.parts) != 2 {
 		t.Fatalf("related has %d parts, want 2 (alternative + image)", len(rel.parts))
+	}
+	if _, ok := findAlternativeIn(t, rel.parts[0]); !ok {
+		t.Fatal("related root must be the alternative")
 	}
 	img := rel.parts[1]
 	if img.Header.Get("Content-Id") != "<image001>" { // Build 侧负责尖括号包裹
