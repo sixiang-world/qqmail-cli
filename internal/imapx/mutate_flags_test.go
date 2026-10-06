@@ -128,6 +128,22 @@ func (f *writableFixture) LastStoreLine() string {
 	return ""
 }
 
+// storeLineCount reports how many captured client lines carry a STORE command.
+// A rejecting call must prove it emitted zero new STORE lines; LastStoreLine()
+// alone cannot, because in a shared fixture it would keep returning the line
+// from an earlier, successful call.
+func (f *writableFixture) storeLineCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	count := 0
+	for _, line := range f.lines {
+		if strings.Contains(strings.ToUpper(line), "STORE") {
+			count++
+		}
+	}
+	return count
+}
+
 func TestSetFlagsSendsStoreAddAndRemove(t *testing.T) {
 	f := newWritableFixture(t) // 新建：连接记录型 fake，返回可调 Mutator 的构造
 	id := mailmodel.MsgID{Folder: "INBOX", UIDValidity: 1, UID: 7}
@@ -144,7 +160,28 @@ func TestSetFlagsSendsStoreAddAndRemove(t *testing.T) {
 	if got := f.LastStoreLine(); !strings.Contains(got, `-FLAGS.SILENT`) || !strings.Contains(got, `\Seen`) {
 		t.Fatalf("remove line: %q", got)
 	}
+	storeLinesBefore := f.storeLineCount()
 	if err := f.Mutator.SetFlags(context.Background(), id, []string{"\\Flagged"}, []string{"\\Seen"}); err == nil {
 		t.Fatal("want error when both add and remove are set")
+	}
+	// The rejection must fire before any wire traffic: the failing call may
+	// not append a single STORE line (a regression that SELECTs and STOREs
+	// before validating would otherwise slip past the error assertion alone).
+	if got := f.storeLineCount(); got != storeLinesBefore {
+		t.Fatalf("both add and remove rejected but %d extra STORE line(s) reached the wire", got-storeLinesBefore)
+	}
+}
+
+func TestSetFlagsSendsMultiFlagAddInOneStore(t *testing.T) {
+	f := newWritableFixture(t)
+	id := mailmodel.MsgID{Folder: "INBOX", UIDValidity: 1, UID: 7}
+
+	if err := f.Mutator.SetFlags(context.Background(), id, []string{"\\Flagged", "\\Draft"}, nil); err != nil {
+		t.Fatalf("multi-flag add: %v", err)
+	}
+	// Both flags go out in one STORE command with a single flag list, not as
+	// two sequential STOREs.
+	if got := f.LastStoreLine(); !strings.Contains(got, `+FLAGS.SILENT (\Flagged \Draft)`) {
+		t.Fatalf("multi-flag add line: %q", got)
 	}
 }
