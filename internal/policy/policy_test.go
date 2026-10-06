@@ -147,6 +147,32 @@ func TestReadonlyBlocksSaveDraftBeforeWriter(t *testing.T) {
 	}
 }
 
+// Folder verbs emit the same failure-suppressing attempt/ok audit pair as
+// MarkRead/SaveDraft: the attempt line is written before the writer call, and
+// the ok/failed line never masks the primary error.
+func TestFolderVerbsAuditAttemptThenResult(t *testing.T) {
+	t.Setenv(ReadonlyEnv, "0")
+	writer := &fakeMutator{}
+	store := openAuditStore(t)
+	service := New(writer, store)
+	if err := service.CreateFolder(context.Background(), "arch/2026", "folder.create"); err != nil || len(writer.created) != 1 {
+		t.Fatalf("create positive path: calls=%d err=%v", len(writer.created), err)
+	}
+	if err := service.RenameFolder(context.Background(), "arch/2026", "arch/2027", "folder.rename"); err != nil || len(writer.renamed) != 1 {
+		t.Fatalf("rename positive path: calls=%d err=%v", len(writer.renamed), err)
+	}
+	// AuditList is newest-first: for each verb the ok record precedes the
+	// attempt record, and the id field carries the folder name.
+	entries, listErr := store.AuditList(context.Background(), 10)
+	if listErr != nil || len(entries) != 4 ||
+		entries[0].Action != "folder_rename" || entries[0].MsgID != "arch/2026->arch/2027" ||
+		entries[1].Action != "folder_rename_attempt" ||
+		entries[2].Action != "folder_create" || entries[2].MsgID != "arch/2026" ||
+		entries[3].Action != "folder_create_attempt" {
+		t.Fatalf("audit entries=%+v err=%v", entries, listErr)
+	}
+}
+
 func openAuditStore(t *testing.T) *index.DB {
 	t.Helper()
 	store, err := index.OpenPath(filepath.Join(t.TempDir(), "cache.db"), true)

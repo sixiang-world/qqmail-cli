@@ -177,6 +177,9 @@ func (s *Service) CreateFolder(ctx context.Context, name, command string) error 
 	if err := RequireMutationAllowed(); err != nil {
 		return err
 	}
+	if err := s.record(ctx, command, "folder_create_attempt", name, "attempt", ""); err != nil {
+		return err
+	}
 	err := s.writer.CreateFolder(ctx, name)
 	result := "ok"
 	if err != nil {
@@ -190,6 +193,9 @@ func (s *Service) CreateFolder(ctx context.Context, name, command string) error 
 
 func (s *Service) RenameFolder(ctx context.Context, oldName, newName, command string) error {
 	if err := RequireMutationAllowed(); err != nil {
+		return err
+	}
+	if err := s.record(ctx, command, "folder_rename_attempt", oldName+"->"+newName, "attempt", ""); err != nil {
 		return err
 	}
 	err := s.writer.RenameFolder(ctx, oldName, newName)
