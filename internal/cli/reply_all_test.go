@@ -235,3 +235,31 @@ func TestLoadOriginalToleratesUnparsableToAndCc(t *testing.T) {
 		t.Fatalf("expected one warning per unparsable header, got %v", original.Warnings)
 	}
 }
+
+// reply and forward must surface the original mail's unparsable recipient
+// headers on stderr instead of silently dropping them: the compose output has
+// no warnings field, so stderr is the only presentation surface.
+func TestComposeSurfacesOriginalHeaderWarningsOnStderr(t *testing.T) {
+	t.Setenv("QQMAIL_CLI_READONLY", "0")
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"reply", []string{"reply", replyAllMsgID, "--body", "thanks", "--execute"}},
+		{"forward", []string{"forward", replyAllMsgID, "--to", "reader@example.com", "--body", "FYI"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			configPath := saveSendConfig(t, []string{"boss@example.com", "reader@example.com"})
+			rt, _ := newReplyAllRuntime(t, configPath, brokenAddressMailReader{}, func(sendmail.Draft) {})
+			root := NewRoot(rt)
+			root.SetArgs(append([]string{"--config", configPath}, tc.args...))
+			if err := root.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			stderr := rt.Err.(*bytes.Buffer).String()
+			if !strings.Contains(stderr, "2 个收件人头无法解析") || !strings.Contains(stderr, "To 头解析失败") {
+				t.Fatalf("%s must surface the original header warnings on stderr:\n%s", tc.name, stderr)
+			}
+		})
+	}
+}

@@ -110,6 +110,7 @@ func newReplyCommand(rt *Runtime) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		reportOriginalWarnings(rt, original)
 		body, err := composeBody(opts.Body, opts.BodyFile)
 		if err != nil {
 			return err
@@ -187,6 +188,7 @@ func newForwardCommand(rt *Runtime) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		reportOriginalWarnings(rt, original)
 		body, err := composeBody(opts.Body, opts.BodyFile)
 		if err != nil {
 			return err
@@ -659,6 +661,18 @@ func loadOriginal(rt *Runtime, id mailmodel.MsgID) (originalMessage, error) {
 		result.References = appendUnique(result.References, parsed.MessageID)
 	}
 	return result, nil
+}
+
+// reportOriginalWarnings surfaces the unparsable recipient headers of the
+// original mail on stderr: loadOriginal silently ignores them (treating the
+// header as empty), so a reply/forward would otherwise drop recipients without
+// a trace. The compose commands' output carries no warnings field, so this
+// one sanitized human line is the presentation surface.
+func reportOriginalWarnings(rt *Runtime, original originalMessage) {
+	if len(original.Warnings) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintf(rt.Err, "原邮件 %d 个收件人头无法解析，已忽略：%s\n", len(original.Warnings), output.SanitizeHuman(strings.Join(original.Warnings, "；")))
 }
 
 func modelAddresses(values []mailmodel.Address) []mail.Address {
