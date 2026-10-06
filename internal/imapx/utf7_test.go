@@ -46,7 +46,7 @@ func TestDecodeMailboxRejectsMalformed(t *testing.T) {
 	//   BASE64 alphabet is unpadded; base64.NoPadding decode rejects '=')
 	//   &abcde-            — a run whose base64 length mod 4 == 1 carries no
 	//   representable byte quantity (DecodeString fails outright)
-	for _, in := range []string{"&jSZTVQ", "&,,,,-", "&jSZTVQ=-", "&jS=Z-", "&abcde-"} {
+	for _, in := range []string{"&jSZTVQ", "&,,,,-", "&jSZTVQ=-", "&jS=Z-", "&abcde-", "&jSbb-"} {
 		if _, err := DecodeMailbox(in); err == nil {
 			t.Errorf("DecodeMailbox(%q) = nil error, want failure", in)
 		}
