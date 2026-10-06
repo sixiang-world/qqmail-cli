@@ -36,6 +36,10 @@ func (f fakeCleanMutator) FetchHeaderFields(context.Context, []uint32) ([]mailmo
 func (f fakeCleanMutator) SetFlags(context.Context, mailmodel.MsgID, []string, []string) error {
 	return nil
 }
+func (f fakeCleanMutator) CreateFolder(context.Context, string) error { return nil }
+func (f fakeCleanMutator) RenameFolder(context.Context, string, string) error {
+	return nil
+}
 func (f fakeCleanMutator) MoveUID(_ context.Context, id mailmodel.MsgID, destination string) (imapx.MutationResult, error) {
 	*f.moved = append(*f.moved, id.String()+"->"+destination)
 	return imapx.MutationResult{Method: "uid_move", Destination: destination, DestinationVerified: true}, nil

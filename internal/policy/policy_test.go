@@ -17,6 +17,8 @@ type fakeMutator struct {
 	copyCalls      int
 	setFlagsAdd    []string
 	setFlagsRemove []string
+	created        []string
+	renamed        [][2]string
 }
 
 func (f *fakeMutator) Capabilities() ([]string, []string)                           { return nil, f.caps }
@@ -41,6 +43,14 @@ func (f *fakeMutator) SetSeen(context.Context, mailmodel.MsgID) error {
 func (f *fakeMutator) SetFlags(_ context.Context, _ mailmodel.MsgID, add, remove []string) error {
 	f.setFlagsAdd = add
 	f.setFlagsRemove = remove
+	return nil
+}
+func (f *fakeMutator) CreateFolder(_ context.Context, name string) error {
+	f.created = append(f.created, name)
+	return nil
+}
+func (f *fakeMutator) RenameFolder(_ context.Context, oldName, newName string) error {
+	f.renamed = append(f.renamed, [2]string{oldName, newName})
 	return nil
 }
 func (f *fakeMutator) MoveUID(context.Context, mailmodel.MsgID, string) (imapx.MutationResult, error) {

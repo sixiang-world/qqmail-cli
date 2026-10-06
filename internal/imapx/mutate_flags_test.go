@@ -70,6 +70,8 @@ func newWritableFixture(t *testing.T) *writableFixture {
 				_, _ = fmt.Fprintf(tlsConn, "* FLAGS (\\Seen \\Flagged)\r\n* 1 EXISTS\r\n* OK [UIDVALIDITY 1] stable\r\n* OK [UIDNEXT 8] next\r\n%s OK [READ-WRITE] selected\r\n", tag)
 			case "UID":
 				_, _ = fmt.Fprintf(tlsConn, "%s OK stored\r\n", tag)
+			case "CREATE", "RENAME":
+				_, _ = fmt.Fprintf(tlsConn, "%s OK folder done\r\n", tag)
 			case "LOGOUT":
 				_, _ = fmt.Fprintf(tlsConn, "* BYE done\r\n%s OK logout\r\n", tag)
 				return

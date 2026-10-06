@@ -102,6 +102,10 @@ func (m fakeRestoreMutator) SetSeen(context.Context, mailmodel.MsgID) error { re
 func (m fakeRestoreMutator) SetFlags(context.Context, mailmodel.MsgID, []string, []string) error {
 	return nil
 }
+func (m fakeRestoreMutator) CreateFolder(context.Context, string) error { return nil }
+func (m fakeRestoreMutator) RenameFolder(context.Context, string, string) error {
+	return nil
+}
 func (m fakeRestoreMutator) MoveUID(context.Context, mailmodel.MsgID, string) (imapx.MutationResult, error) {
 	return imapx.MutationResult{Method: "uid_move", DestinationVerified: true}, nil
 }

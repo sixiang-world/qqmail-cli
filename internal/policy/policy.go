@@ -168,6 +168,41 @@ func (s *Service) Move(ctx context.Context, id mailmodel.MsgID, destination stri
 	return result, err
 }
 
+// CreateFolder and RenameFolder are the folder-structure write verbs. They do
+// not depend on any message selection state; the INBOX guard lives in the
+// command layer (RFC 3501 gives RENAME INBOX the special semantics of moving
+// every message into the new folder). The audit record's id field carries the
+// folder name, since folders have no message id.
+func (s *Service) CreateFolder(ctx context.Context, name, command string) error {
+	if err := RequireMutationAllowed(); err != nil {
+		return err
+	}
+	err := s.writer.CreateFolder(ctx, name)
+	result := "ok"
+	if err != nil {
+		result = "failed"
+	}
+	if auditErr := s.record(ctx, command, "folder_create", name, result, ""); auditErr != nil && err == nil {
+		return auditErr
+	}
+	return err
+}
+
+func (s *Service) RenameFolder(ctx context.Context, oldName, newName, command string) error {
+	if err := RequireMutationAllowed(); err != nil {
+		return err
+	}
+	err := s.writer.RenameFolder(ctx, oldName, newName)
+	result := "ok"
+	if err != nil {
+		result = "failed"
+	}
+	if auditErr := s.record(ctx, command, "folder_rename", oldName+"->"+newName, result, ""); auditErr != nil && err == nil {
+		return auditErr
+	}
+	return err
+}
+
 func (s *Service) record(ctx context.Context, command, action, id, result, planRef string) error {
 	if s.audit == nil {
 		return fmt.Errorf("policy audit store is required")

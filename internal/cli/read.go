@@ -46,6 +46,7 @@ func newFolderCommand(rt *Runtime) *cobra.Command {
 		return nil
 	}
 	root.AddCommand(cmd)
+	root.AddCommand(newFolderCreateCommand(rt), newFolderRenameCommand(rt))
 	return root
 }
 

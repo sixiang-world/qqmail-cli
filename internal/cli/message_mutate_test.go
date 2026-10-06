@@ -31,6 +31,10 @@ func (s *policyMutatorStub) SetFlags(_ context.Context, _ mailmodel.MsgID, add, 
 	return nil
 }
 
+func (s *policyMutatorStub) CreateFolder(context.Context, string) error { return nil }
+
+func (s *policyMutatorStub) RenameFolder(context.Context, string, string) error { return nil }
+
 func (s *policyMutatorStub) MoveUID(context.Context, mailmodel.MsgID, string) (imapx.MutationResult, error) {
 	return imapx.MutationResult{}, nil
 }

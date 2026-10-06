@@ -74,7 +74,7 @@ func TestGoIMAPMutationCallsAreConfinedToMutationBoundary(t *testing.T) {
 
 func TestMutationBoundaryCanOnlyBeCalledByPolicy(t *testing.T) {
 	root := projectRoot(t)
-	mutationMethods := map[string]bool{"SetSeen": true, "SetFlags": true, "MoveUID": true, "CopyMarkDeletedUID": true}
+	mutationMethods := map[string]bool{"SetSeen": true, "SetFlags": true, "CreateFolder": true, "RenameFolder": true, "MoveUID": true, "CopyMarkDeletedUID": true}
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return err
@@ -91,7 +91,16 @@ func TestMutationBoundaryCanOnlyBeCalledByPolicy(t *testing.T) {
 			}
 			selector, ok := call.Fun.(*ast.SelectorExpr)
 			if ok && mutationMethods[selector.Sel.Name] && !strings.HasPrefix(filepath.ToSlash(rel), "internal/policy/") {
-				t.Errorf("mutation boundary method %s called outside policy: %s", selector.Sel.Name, rel)
+				// policy.Service deliberately exposes same-named wrappers for
+				// some boundary methods (Service.CreateFolder wraps
+				// Mutator.CreateFolder). Outside policy, only the command
+				// layer's uniformly named `service` receiver may reach those
+				// wrappers; any other receiver (mutator, client, ...) would be
+				// a direct boundary call escaping the audit/readonly gates.
+				receiver, _ := selector.X.(*ast.Ident)
+				if receiver == nil || receiver.Name != "service" {
+					t.Errorf("mutation boundary method %s called outside policy: %s", selector.Sel.Name, rel)
+				}
 			}
 			return true
 		})

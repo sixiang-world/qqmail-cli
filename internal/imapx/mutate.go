@@ -24,6 +24,8 @@ type Mutator interface {
 	Reader
 	SetSeen(context.Context, mailmodel.MsgID) error
 	SetFlags(context.Context, mailmodel.MsgID, []string, []string) error
+	CreateFolder(context.Context, string) error
+	RenameFolder(context.Context, string, string) error
 	MoveUID(context.Context, mailmodel.MsgID, string) (MutationResult, error)
 	CopyMarkDeletedUID(context.Context, mailmodel.MsgID, string, MessageIdentity) (MutationResult, error)
 	LocateByIdentity(context.Context, string, MessageIdentity) ([]mailmodel.MsgID, error)
@@ -85,6 +87,32 @@ func (c *Client) SetFlags(ctx context.Context, id mailmodel.MsgID, add, remove [
 	}
 	command := c.raw.Store(imap.UIDSetNum(imap.UID(id.UID)), &imap.StoreFlags{Op: op, Silent: true, Flags: flags}, nil)
 	return command.Close()
+}
+
+// CreateFolder sends CREATE for one folder. Folder operations do not depend on
+// the selected message state, so unlike the flag primitives they never select a
+// mailbox writable. The name is encoded once through the repo's canonical
+// EncodeMailbox wrapper (internal/imapx/utf7.go): go-imap passes printable
+// ASCII through byte-for-byte, so the encoded form reaches the wire unchanged.
+func (c *Client) CreateFolder(ctx context.Context, name string) error {
+	if err := c.setDeadline(ctx); err != nil {
+		return err
+	}
+	stop := c.watchdog(ctx)
+	defer stop()
+	return c.raw.Create(EncodeMailbox(name), nil).Wait()
+}
+
+// RenameFolder sends RENAME from one folder to another. The caller (policy
+// layer) owns the INBOX guard: RENAME INBOX has the special RFC 3501 semantics
+// of moving every message into the new folder.
+func (c *Client) RenameFolder(ctx context.Context, oldName, newName string) error {
+	if err := c.setDeadline(ctx); err != nil {
+		return err
+	}
+	stop := c.watchdog(ctx)
+	defer stop()
+	return c.raw.Rename(EncodeMailbox(oldName), EncodeMailbox(newName), nil).Wait() // beta.8 三参，缺 options 传 nil
 }
 
 func toFlagList(names []string) []imap.Flag {
