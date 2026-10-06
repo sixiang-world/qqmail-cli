@@ -73,7 +73,7 @@ These are dry-runs. Review the displayed from/to/cc/bcc, subject, body summary, 
 
 Each invocation submits at most one message. On `rate_limited`, stop immediately and wait 10–15 minutes; do not probe or retry.
 
-`send`/`reply`/`forward --save-draft` appends the built message to the server drafts folder instead of sending: it is a mutation, not a send — no send allowlist applies, but it still requires `--execute` with TTY confirmation. With `--body-format html` the dry-run preview already contains the HTML source excerpt, and what you confirm for sending is the derived plain-text fallback shown to non-HTML clients. Received inline (CID) images are already listed and downloadable through the attachment read side and are carried automatically by `forward`; on the sending side attach them with `--attach-inline` plus `--body-format html`, referencing each file from the HTML body as `cid:<name>`.
+`send`/`reply`/`forward --save-draft` appends the built message to the server drafts folder instead of sending: it is a mutation, not a send — no send allowlist applies, but it still requires `--execute` with TTY confirmation. With `--body-format html` the dry-run preview already contains the HTML source excerpt, and what you confirm for sending is the derived plain-text fallback shown to non-HTML clients. Received inline (CID) images are already listed and downloadable through the attachment read side and are carried automatically by `forward`; on the sending side attach them with `--attach-inline` plus `--body-format html`, referencing each file from the HTML body as `cid:<name>` — the Content-ID is `<name@qqmail-cli.local>` (full base file name including the extension), and the dry-run preview lists each file's exact reference.
 
 ## Exit decisions
 
