@@ -225,7 +225,7 @@ Agent 集成三件套：
 - `qqmail-cli schema <command>` —— 输出内嵌 JSON Schema，消费任何新形状前先自校验。
 - [`skills/qqmail-cli/SKILL.md`](skills/qqmail-cli/SKILL.md) —— 随仓分发的 Agent 技能文件，装完 CLI 即获得完整调用纪律（Claude Code 等 harness 直接可用）。
 
-关键纪律：先 `envelope list` 一次，再把所有要读的 id 交给**一次** `message show` 批量读取——每次 CLI 调用就是一次 IMAP 登录，高频登录会触发 QQ 风控。退出码语义化：`error.retryable` 为 true 才可重试（指数退避，至多两次）；退出码 30（限流）时立即停手等 10-15 分钟；50（policy_denied）代表安全门禁在工作，需要的是人而不是重试。0.4 起 Agent 还能经同一套门禁做星标管理（`message flag`）、移入回收站（`message trash`）、文件夹整理（`folder create`/`rename`）、服务器端检索（`search --server`）、存服务器草稿（`--save-draft`）与内嵌图发送（`--attach-inline` + `cid:`），全部默认 dry-run，`agent-info` 与 `schema <command>` 随时可查新命令的风险级别与输出契约。
+关键纪律：先 `envelope list` 一次，再把所有要读的 id 交给**一次** `message show` 批量读取——每次 CLI 调用就是一次 IMAP 登录，高频登录会触发 QQ 风控。退出码语义化：`error.retryable` 为 true 才可重试（指数退避，至多两次）；退出码 30（限流）时立即停手等 10-15 分钟；50（policy_denied）代表安全门禁在工作，需要的是人而不是重试。0.4 起 Agent 还能经同一套门禁做星标管理（`message flag`）、移入回收站（`message trash`）、文件夹整理（`folder create`/`rename`）、服务器端检索（`search --server`）、存服务器草稿（`--save-draft`）与内嵌图发送（`--attach-inline` + `cid:`）——写命令默认 dry-run，只读命令即时执行——`agent-info` 与 `schema <command>` 随时可查新命令的风险级别与输出契约。
 
 ## 安全模型
 
