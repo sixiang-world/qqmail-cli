@@ -32,18 +32,23 @@ func (f *writableFixture) LastRenameLine() string {
 	return ""
 }
 
+// The wire expectations are the literal bytes captured from this fixture with
+// go-imap v2.0.0-beta.8 serializing the raw name: RFC 3501 modified UTF-7
+// (&-shift form) — 账单 = &jSZTVQ-. EncodeMailbox cannot express this form (it
+// emits RFC 2152 '+'-shift), which is exactly why the client passes the raw
+// name and lets go-imap encode, the same path message move uses.
 func TestCreateAndRenameFolderLines(t *testing.T) {
 	f := newWritableFixture(t) // Task 4 建立的记录型 fake；folder 操作不依赖邮件选中态
 	if err := f.Mutator.CreateFolder(context.Background(), "2026-账单"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if got := f.LastCreateLine(); !strings.Contains(got, EncodeMailbox("2026-账单")) {
+	if got := f.LastCreateLine(); !strings.Contains(got, `CREATE "2026-&jSZTVQ-"`) {
 		t.Fatalf("create line: %q", got)
 	}
 	if err := f.Mutator.RenameFolder(context.Background(), "2026-账单", "2027-账单"); err != nil {
 		t.Fatalf("rename: %v", err)
 	}
-	if got := f.LastRenameLine(); !strings.Contains(got, EncodeMailbox("2027-账单")) {
+	if got := f.LastRenameLine(); !strings.Contains(got, `RENAME "2026-&jSZTVQ-" "2027-&jSZTVQ-"`) {
 		t.Fatalf("rename line: %q", got)
 	}
 }

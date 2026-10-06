@@ -91,28 +91,31 @@ func (c *Client) SetFlags(ctx context.Context, id mailmodel.MsgID, add, remove [
 
 // CreateFolder sends CREATE for one folder. Folder operations do not depend on
 // the selected message state, so unlike the flag primitives they never select a
-// mailbox writable. The name is encoded once through the repo's canonical
-// EncodeMailbox wrapper (internal/imapx/utf7.go): go-imap passes printable
-// ASCII through byte-for-byte, so the encoded form reaches the wire unchanged.
+// mailbox writable. The caller's raw name goes straight to go-imap, which
+// serializes mailbox arguments as RFC 3501 modified UTF-7 (&-shift form) — the
+// same wire path as message move. Do NOT pre-encode with EncodeMailbox: it
+// emits RFC 2152 '+'-shift form, which is not mUTF-7 and would put a second,
+// nonstandard wire shape for Chinese folder names on this CLI.
 func (c *Client) CreateFolder(ctx context.Context, name string) error {
 	if err := c.setDeadline(ctx); err != nil {
 		return err
 	}
 	stop := c.watchdog(ctx)
 	defer stop()
-	return c.raw.Create(EncodeMailbox(name), nil).Wait()
+	return c.raw.Create(name, nil).Wait()
 }
 
-// RenameFolder sends RENAME from one folder to another. The caller (policy
-// layer) owns the INBOX guard: RENAME INBOX has the special RFC 3501 semantics
-// of moving every message into the new folder.
+// RenameFolder sends RENAME from one folder to another. The command layer
+// (internal/cli/folder_mutate.go) owns the INBOX guard before any wire traffic:
+// RFC 3501 gives RENAME INBOX the special semantics of moving every message
+// into the new folder.
 func (c *Client) RenameFolder(ctx context.Context, oldName, newName string) error {
 	if err := c.setDeadline(ctx); err != nil {
 		return err
 	}
 	stop := c.watchdog(ctx)
 	defer stop()
-	return c.raw.Rename(EncodeMailbox(oldName), EncodeMailbox(newName), nil).Wait() // beta.8 三参，缺 options 传 nil
+	return c.raw.Rename(oldName, newName, nil).Wait() // beta.8 三参，缺 options 传 nil
 }
 
 func toFlagList(names []string) []imap.Flag {
