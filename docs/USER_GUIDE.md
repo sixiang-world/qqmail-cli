@@ -199,7 +199,7 @@ $list.data.envelopes | Select-Object date, from, subject, id
 .\bin\qqmail-cli.exe search "关键词" --server --limit 50 --json
 ```
 
-`--local` 与 `--server` 二选一：`--local` 查本地索引（快、离线、可全文），`--server` 发送 IMAP `TEXT` 检索（实时、但受服务器能力限制）。实际使用的模式记录在 `meta.search_mode`（`server_text` 或 `server_body`）。
+`--local` 与 `--server` 二选一：`--local` 查本地索引（快、离线、可全文），`--server` 发送 IMAP `BODY` 检索（按正文关键词匹配，实时；实测 QQ 静默忽略 `TEXT` 准则，见 `docs/compat/qq-20261006.md`）。实际使用的模式记录在 `meta.search_mode`（当前为 `server_body`）。注意 `BODY` 不匹配主题与发件人——那两类过滤用 `envelope list --subject/--from`。
 
 服务器拒绝检索条件时返回 `policy_denied`（退出码 50）——这是服务器的最终答复而非瞬时故障，不要重试，改用 `--from`/`--subject` 过滤或先 `sync` 后 `search --local`。检索关键词只进 IMAP SEARCH 命令，不会出现在日志、审计或错误信息里。
 

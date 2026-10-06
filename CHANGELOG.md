@@ -12,10 +12,11 @@ All notable development changes are recorded here. Formal releases remain owner-
   existing `--since`/`--from`/`--subject`. The criteria the server actually
   applied are reported in `meta.filters_applied`. Read-class: readonly stays
   fully usable.
-- `search --server`: server-side keyword search via the IMAP `TEXT`
-  criterion, an alternative to `search --local` (the two are mutually
+- `search --server`: server-side keyword search via the IMAP `BODY`
+  criterion (the 2026-10-07 dialect probe recorded QQ silently ignoring
+  `TEXT` — see docs/compat/qq-20261006.md), an alternative to `search --local` (the two are mutually
   exclusive; `--local` remains the default). The executed mode is reported in
-  `meta.search_mode` (`server_text`/`server_body`). A server NO/BAD refusal
+  `meta.search_mode` (`server_body`). A server NO/BAD refusal
   of the search is final, not transient: it maps to `policy_denied` (exit 50)
   with a fall-back-to-local suggestion instead of a retryable classification.
   The query travels only inside the SEARCH command — never into logs, audit

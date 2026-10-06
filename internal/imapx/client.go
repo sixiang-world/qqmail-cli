@@ -223,8 +223,9 @@ func (c *Client) Examine(ctx context.Context, folder string) (uint32, uint32, er
 	return selected.UIDValidity, selected.NumMessages, nil
 }
 
-// ServerSearchField 由 docs/compat/qq-20261006.md 的探测结论定案；该文档待 Task 0 探针落档。
-const ServerSearchField = "TEXT"
+// ServerSearchField 定案为 BODY：docs/compat/qq-20261006.md 的实测（2026-10-07）显示
+// QQ 对 TEXT 准则静默忽略（无意义词返回全箱且 OK），BODY 真实过滤。
+const ServerSearchField = "BODY"
 
 func (c *Client) Search(ctx context.Context, filter SearchFilter) ([]uint32, error) {
 	criteria := &imap.SearchCriteria{Since: filter.Since}

@@ -77,7 +77,7 @@ func newFixture(t *testing.T, opts ...func(*searchWireFixture)) *searchWireFixtu
 			case "SELECT":
 				_, _ = fmt.Fprintf(tlsConn, "* FLAGS (\\Seen)\r\n* 1 EXISTS\r\n* OK [UIDVALIDITY 11] stable\r\n* OK [UIDNEXT 8] next\r\n%s OK [READ-ONLY] selected\r\n", tag)
 			case "UID":
-				if len(fields) >= 3 && strings.EqualFold(fields[2], "SEARCH") && f.rejectTextWithBad && strings.Contains(strings.ToUpper(line), "TEXT") {
+				if len(fields) >= 3 && strings.EqualFold(fields[2], "SEARCH") && f.rejectTextWithBad && strings.Contains(strings.ToUpper(line), "BODY") {
 					_, _ = fmt.Fprintf(tlsConn, "%s BAD unsupported search criterion\r\n", tag)
 					continue
 				}
@@ -122,16 +122,17 @@ func (f *searchWireFixture) LastSearchLine() string {
 	return ""
 }
 
-func TestSearchMapsTextCriterion(t *testing.T) {
+func TestSearchMapsBodyCriterion(t *testing.T) {
 	f := newFixture(t)
 	// 线路断言用 ASCII 查询词：非 ASCII 查询在未通告 IMAP4rev2 时走 literal 编码
-	// （TEXT {6} + 续行），不会出现 TEXT "..." 引号形态；中文查询在 CLI 层测试覆盖
+	// （BODY {7} + 续行），不会出现 BODY "..." 引号形态；中文查询在 CLI 层测试覆盖
+	// ServerSearchField 实测定案为 BODY（QQ 静默忽略 TEXT，见 docs/compat/qq-20261006.md）
 	_, err := f.Client.Search(context.Background(), SearchFilter{Text: "invoice"})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
-	if got := f.LastSearchLine(); !strings.Contains(got, `TEXT "invoice"`) {
-		t.Fatalf("expected TEXT criterion, got: %q", got)
+	if got := f.LastSearchLine(); !strings.Contains(got, `BODY "invoice"`) {
+		t.Fatalf("expected BODY criterion, got: %q", got)
 	}
 }
 
