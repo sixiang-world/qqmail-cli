@@ -346,6 +346,13 @@ func runDraft(rt *Runtime, cmd *cobra.Command, named account.Named, draft sendma
 	return err
 }
 
+// draftsFolderResolveError is the shared verdict when cleaner.DraftsFolder
+// cannot identify the server's drafts folder; the dry-run and execute branches
+// of runSaveDraft return it unchanged.
+func draftsFolderResolveError() *errmap.Error {
+	return &errmap.Error{Kind: errmap.NotFound, Message: "无法识别服务器草稿箱文件夹", Suggestion: "见 docs/compat/ 的文件夹方言记录"}
+}
+
 // runSaveDraft is the --save-draft fork shared by send/reply/forward: the
 // exact same built message is APPENDed to the server drafts folder with the
 // \Draft flag instead of being handed to SMTP. Storing a draft sends nothing,
@@ -364,7 +371,7 @@ func runSaveDraft(rt *Runtime, cmd *cobra.Command, raw []byte, summary sendmail.
 		draftsName, draftsErr := cleaner.DraftsFolder(ctx, reader)
 		_ = reader.Logout(context.Background())
 		if draftsErr != nil {
-			return &errmap.Error{Kind: errmap.NotFound, Message: "无法识别服务器草稿箱文件夹", Suggestion: "见 docs/compat/ 的文件夹方言记录"}
+			return draftsFolderResolveError()
 		}
 		if !rt.JSON {
 			// Same human preview the send dry-run shows, on stdout in text mode;
@@ -385,7 +392,7 @@ func runSaveDraft(rt *Runtime, cmd *cobra.Command, raw []byte, summary sendmail.
 	defer func() { _ = mutator.Logout(context.Background()) }()
 	draftsName, err := cleaner.DraftsFolder(ctx, mutator)
 	if err != nil {
-		return &errmap.Error{Kind: errmap.NotFound, Message: "无法识别服务器草稿箱文件夹", Suggestion: "见 docs/compat/ 的文件夹方言记录"}
+		return draftsFolderResolveError()
 	}
 	printDraftSummary(rt.Err, summary)
 	_, _ = fmt.Fprintf(rt.Err, "将把草稿存入服务器草稿箱 %s（不发送）。\n", output.SanitizeHuman(draftsName))
