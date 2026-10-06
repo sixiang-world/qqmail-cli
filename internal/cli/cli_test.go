@@ -261,6 +261,7 @@ func TestReadonlyEnvironmentBlocksEveryMutatingCommandBeforeDial(t *testing.T) {
 		{"--config", configPath, "message", "mark-read", id, "--execute"},
 		{"--config", configPath, "message", "mark-unread", id, "--execute"},
 		{"--config", configPath, "message", "flag", id, "--add", "\\Flagged", "--execute"},
+		{"--config", configPath, "message", "flag", id, "--remove", "\\Flagged", "--execute"},
 		{"--config", configPath, "message", "move", id, "Trash", "--execute"},
 		{"--config", configPath, "message", "trash", id, "--execute"},
 		{"--config", configPath, "folder", "create", "arch/2026", "--execute"},
@@ -271,7 +272,9 @@ func TestReadonlyEnvironmentBlocksEveryMutatingCommandBeforeDial(t *testing.T) {
 		{"--config", configPath, "send", "--to", "reader@example.com", "--subject", "fixture", "--execute"},
 		{"--config", configPath, "send", "--to", "reader@example.com", "--subject", "fixture", "--save-draft", "--execute"},
 		{"--config", configPath, "reply", id, "--execute"},
+		{"--config", configPath, "reply", id, "--save-draft", "--execute"},
 		{"--config", configPath, "forward", id, "--to", "reader@example.com", "--execute"},
+		{"--config", configPath, "forward", id, "--to", "reader@example.com", "--save-draft", "--execute"},
 	}
 	for _, args := range commands {
 		dialed := false
