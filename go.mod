@@ -1,6 +1,6 @@
 module github.com/situker/qqmail-cli
 
-go 1.25.0
+go 1.25.13
 
 require (
 	github.com/cention-sany/utf7 v0.0.0-20170124080048-26cad61bd60a

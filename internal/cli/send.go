@@ -77,6 +77,12 @@ func newReplyCommand(rt *Runtime) *cobra.Command {
 				return err
 			}
 		}
+		if len(opts.To) > 0 {
+			// The flag exists on every compose command, so silently ignoring it
+			// would look like the recipient was honored. Reply recipients come
+			// from the original mail; changing them is what send is for.
+			return &errmap.Error{Kind: errmap.Usage, Message: "reply 的收件人来自原邮件（Reply-To/From），不接受 --to", Suggestion: "需要抄送用 --cc/--bcc；需要指定新收件人请改用 send"}
+		}
 		id, err := mailmodel.ParseMsgID(args[0])
 		if err != nil {
 			return err

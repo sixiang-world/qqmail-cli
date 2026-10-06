@@ -53,7 +53,7 @@ while content-free audit JSONL remains.
 
 For `clean`, require a schema-valid plan and completed `backup --plan`; the CLI then verifies manifest HMAC, local hashes and server truth before mutation. One execution moves at most 500 messages (`--batch-limit` must be raised explicitly and deliberately by the human). It moves to the server deleted folder but exposes no permanent-delete command. Never seek or construct an EXPUNGE route.
 
-If a cleanup was regretted, `restore --plan plan.json` (dry-run first) locates each cleaned message in the server trash by Message-ID + size from the verified backup manifest and moves it back to its original folder. This only works while the QQ trash auto-purge cycle has not emptied the copy; afterwards the local `.eml` backups under the plan's `backup_root` are the remaining copy. Messages a re-run finds already gone from the server are reported as `already_gone` and skipped safely.
+If a cleanup was regretted, `restore --plan plan.json` (dry-run first) re-identifies each cleaned message in the server trash from the verified backup manifest: messages with a Message-ID header match on Message-ID + size, while Message-ID-less messages fall back to exact-size candidates confirmed by full-body SHA-256 (`located[].match` reports which was used). The trash is scanned once in batched fetches. It then moves the matches back to their original folders. This only works while the QQ trash auto-purge cycle has not emptied the copy; afterwards the local `.eml` backups under the plan's `backup_root` are the remaining copy. Messages a re-run finds already gone from the server are reported as `already_gone` and skipped safely.
 
 ## Safe sending
 

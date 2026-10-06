@@ -231,7 +231,7 @@ $list.data.envelopes | Select-Object date, from, subject, id
 .\bin\qqmail-cli.exe clean --plan .\plan.json --paranoid --execute --json
 ```
 
-执行前 CLI 会验证本地备份、服务器真相，并要求键入计划邮件总数。单次执行上限 500 封（`--batch-limit` 需人工显式提高）。项目没有 bypass flag 或永久删除命令。清理只把邮件移入服务器"已删除"文件夹——注意 QQ 会按其回收站周期自动清空该文件夹。
+执行前 CLI 会验证本地备份、服务器真相，并要求键入将要移动的邮件数量（通过门禁的数量；已不在服务器、将被安全跳过的邮件不计入）。单次执行上限 500 封（`--batch-limit` 需人工显式提高）。项目没有 bypass flag 或永久删除命令。清理只把邮件移入服务器"已删除"文件夹——注意 QQ 会按其回收站周期自动清空该文件夹。
 
 ### 后悔药：restore
 
@@ -242,7 +242,7 @@ $list.data.envelopes | Select-Object date, from, subject, id
 .\bin\qqmail-cli.exe restore --plan .\plan.json --execute --json
 ```
 
-第一条是 dry-run，报告每封邮件是否还能在已删除文件夹中找到（按备份 manifest 的 Message-ID 与大小定位）；第二条经 TTY 确认后把找到的邮件移回原文件夹。已被回收站周期清空的邮件无法还原，但其原始 `.eml` 备份仍在 `backup_root` 下。
+第一条是 dry-run，报告每封邮件是否还能在已删除文件夹中找到；第二条经 TTY 确认后把找到的邮件移回原文件夹。定位方式分两档：有 Message-ID 的邮件按 Message-ID + 大小匹配；没有 Message-ID 的邮件（清理门禁本就允许这类邮件按 UIDVALIDITY+UID+大小通过）按大小筛出候选、再逐封比对备份全文 SHA-256 指纹确认，`located[].match` 会标注实际使用的定位方式。整个定位阶段对回收站只做一次批量扫描（单次 EXAMINE + 分块 FETCH），不会逐封登录触发限流。已被回收站周期清空的邮件无法还原，但其原始 `.eml` 备份仍在 `backup_root` 下。
 
 ### 清理中断后怎么办
 

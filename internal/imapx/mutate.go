@@ -2,6 +2,11 @@ package imapx
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"io"
+	"net"
 	"strings"
 
 	imap "github.com/emersion/go-imap/v2"
@@ -26,6 +31,12 @@ type Mutator interface {
 type MessageIdentity struct {
 	MessageID string
 	SizeBytes int64
+	// SHA256 is the fingerprint of the exact message bytes from the verified
+	// backup. It is the fallback identity for wild messages that legitimately
+	// lack a Message-ID header — the clean gate admits those on
+	// UIDVALIDITY+UID+RFC822.SIZE, so restore and the conservative-copy
+	// confirmation need a way to re-identify them without the header.
+	SHA256 string
 }
 
 type MutationResult struct {
@@ -139,24 +150,70 @@ func (c *Client) confirmDestination(ctx context.Context, destination string, ide
 	return len(matches) > 0, nil
 }
 
-// LocateByIdentity finds messages in a folder by Message-ID plus RFC822.SIZE.
-// It is read-only and powers both the conservative-copy confirmation and the
-// restore command's trash lookup.
+// LocateByIdentity finds messages in a folder. It is read-only and powers both
+// the conservative-copy confirmation and the restore command's trash lookup.
+// With a Message-ID it matches on Message-ID plus RFC822.SIZE; without one it
+// falls back to exact RFC822.SIZE candidates confirmed by full-body SHA-256 —
+// wild email legitimately lacks the Message-ID header, and those messages must
+// still be re-identifiable against the verified backup fingerprint.
 func (c *Client) LocateByIdentity(ctx context.Context, folder string, identity MessageIdentity) ([]mailmodel.MsgID, error) {
-	if strings.TrimSpace(identity.MessageID) == "" || identity.SizeBytes < 0 {
+	if identity.SizeBytes < 0 {
 		return []mailmodel.MsgID{}, nil
 	}
 	uidValidity, _, err := c.Examine(ctx, folder)
 	if err != nil {
 		return nil, err
 	}
-	if err := c.setDeadline(ctx); err != nil {
-		return nil, err
+	if strings.TrimSpace(identity.MessageID) != "" {
+		criteria := &imap.SearchCriteria{Header: []imap.SearchCriteriaHeaderField{{Key: "Message-ID", Value: identity.MessageID}}}
+		data, err := c.uidSearch(ctx, criteria)
+		if err != nil {
+			return nil, err
+		}
+		all := data.AllUIDs()
+		if len(all) == 0 {
+			return []mailmodel.MsgID{}, nil
+		}
+		ids := make([]uint32, len(all))
+		for i, uid := range all {
+			ids[i] = uint32(uid)
+		}
+		envelopes, err := c.FetchEnvelopes(ctx, folder, uidValidity, ids)
+		if err != nil {
+			return nil, err
+		}
+		headers, err := c.FetchHeaderFields(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		headerByUID := map[uint32]string{}
+		for _, header := range headers {
+			headerByUID[header.UID] = normalizeMessageID(header.MessageID)
+		}
+		matches := []mailmodel.MsgID{}
+		for _, envelope := range envelopes {
+			if envelope.Size == identity.SizeBytes && headerByUID[envelope.UID] == normalizeMessageID(identity.MessageID) {
+				matches = append(matches, mailmodel.MsgID{Folder: folder, UIDValidity: uidValidity, UID: envelope.UID})
+			}
+		}
+		return matches, nil
 	}
-	stop := c.watchdog(ctx)
-	criteria := &imap.SearchCriteria{Header: []imap.SearchCriteriaHeaderField{{Key: "Message-ID", Value: identity.MessageID}}}
-	data, err := c.raw.UIDSearch(criteria, nil).Wait()
-	stop()
+	if identity.SHA256 != "" {
+		return c.locateByFingerprint(ctx, folder, uidValidity, identity)
+	}
+	return []mailmodel.MsgID{}, nil
+}
+
+// fingerprintCandidateCap bounds the full-body refetches one fingerprint lookup
+// may issue: exact-size collisions in a folder are rare, and an unbounded scan
+// would trip QQ's connection-rate limits (docs/compat/qq-20260902.md §4a).
+// A capped miss reports "not found", which is the safe direction for both
+// callers — the source message stays untouched, and restore keeps the local
+// backup as the remaining copy.
+const fingerprintCandidateCap = 16
+
+func (c *Client) locateByFingerprint(ctx context.Context, folder string, uidValidity uint32, identity MessageIdentity) ([]mailmodel.MsgID, error) {
+	data, err := c.uidSearch(ctx, &imap.SearchCriteria{})
 	if err != nil {
 		return nil, err
 	}
@@ -172,21 +229,55 @@ func (c *Client) LocateByIdentity(ctx context.Context, folder string, identity M
 	if err != nil {
 		return nil, err
 	}
-	headers, err := c.FetchHeaderFields(ctx, ids)
-	if err != nil {
-		return nil, err
-	}
-	headerByUID := map[uint32]string{}
-	for _, header := range headers {
-		headerByUID[header.UID] = normalizeMessageID(header.MessageID)
-	}
 	matches := []mailmodel.MsgID{}
+	fetched := 0
 	for _, envelope := range envelopes {
-		if envelope.Size == identity.SizeBytes && headerByUID[envelope.UID] == normalizeMessageID(identity.MessageID) {
+		if envelope.Size != identity.SizeBytes {
+			continue
+		}
+		if fetched >= fingerprintCandidateCap {
+			break
+		}
+		fetched++
+		raw, truncated, err := c.FetchBodyPeek(ctx, mailmodel.MsgID{Folder: folder, UIDValidity: uidValidity, UID: envelope.UID}, MaxMessageBytes)
+		if err != nil || truncated {
+			continue
+		}
+		if strings.EqualFold(SHA256Hex(raw), identity.SHA256) {
 			matches = append(matches, mailmodel.MsgID{Folder: folder, UIDValidity: uidValidity, UID: envelope.UID})
 		}
 	}
 	return matches, nil
+}
+
+// uidSearch runs one UID SEARCH under the standard deadline/watchdog pair.
+func (c *Client) uidSearch(ctx context.Context, criteria *imap.SearchCriteria) (*imap.SearchData, error) {
+	if err := c.setDeadline(ctx); err != nil {
+		return nil, err
+	}
+	stop := c.watchdog(ctx)
+	defer stop()
+	return c.raw.UIDSearch(criteria, nil).Wait()
+}
+
+// SHA256Hex is the canonical fingerprint form used by backup manifests and
+// identity matching.
+func SHA256Hex(raw []byte) string {
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
+
+func classifySelectError(cause error, folder string) error {
+	contextData := map[string]any{"folder": folder}
+	var networkError net.Error
+	if errors.As(cause, &networkError) || errors.Is(cause, io.EOF) || errors.Is(cause, io.ErrUnexpectedEOF) {
+		return &errmap.Error{Kind: errmap.Network, Message: "无法以只读方式打开文件夹", Suggestion: "若刚刚频繁登录，请等待 10-15 分钟后重试", Context: contextData, Cause: cause}
+	}
+	lower := strings.ToLower(cause.Error())
+	if strings.Contains(lower, "too many") || strings.Contains(lower, "rate") || strings.Contains(lower, "frequency") || strings.Contains(lower, "temporarily blocked") {
+		return &errmap.Error{Kind: errmap.RateLimited, Message: "QQ 邮箱暂时拒绝了打开文件夹的请求", Suggestion: "停止重试并等待 10-15 分钟", Context: contextData, Cause: cause}
+	}
+	return &errmap.Error{Kind: errmap.NotFound, Message: "无法以只读方式打开文件夹", Context: contextData, Cause: cause}
 }
 
 func hasCapability(values []string, want string) bool {

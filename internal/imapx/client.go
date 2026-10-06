@@ -211,7 +211,11 @@ func (c *Client) Examine(ctx context.Context, folder string) (uint32, uint32, er
 	defer stop()
 	selected, err := c.raw.Select(folder, &imap.SelectOptions{ReadOnly: true}).Wait()
 	if err != nil {
-		return 0, 0, &errmap.Error{Kind: errmap.NotFound, Message: "无法以只读方式打开文件夹", Context: map[string]any{"folder": folder}, Cause: err}
+		// A refused SELECT is usually a wrong folder name, but QQ's rate
+		// limiting presents as exactly the same failure (docs/compat/
+		// qq-20260902.md §4a). Reporting every refusal as not_found would tell
+		// an agent a transient state is permanent and non-retryable.
+		return 0, 0, classifySelectError(err, folder)
 	}
 	return selected.UIDValidity, selected.NumMessages, nil
 }

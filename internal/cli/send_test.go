@@ -180,3 +180,29 @@ func saveSendConfig(t *testing.T, allowlist []string) string {
 	}
 	return path
 }
+
+// reply recipients come from the original mail (Reply-To/From). The --to flag
+// exists on every compose command, so it must be rejected loudly instead of
+// being silently ignored.
+func TestReplyRejectsToFlagInsteadOfSilentlyIgnoring(t *testing.T) {
+	t.Setenv("QQMAIL_CLI_READONLY", "0")
+	configPath := saveSendConfig(t, []string{"reader@example.com"})
+	id := "m1_eyJmIjoiSU5CT1giLCJ2IjoxLCJ1IjoxfQ"
+	called := false
+	rt := &Runtime{
+		Out: &bytes.Buffer{}, Err: &bytes.Buffer{}, In: strings.NewReader("SEND\n"),
+		Secrets:    &secrets.Memory{Values: map[string]string{"user@qq.com": testAuthCode}},
+		IsTerminal: func(io.Reader) bool { return true },
+		Dial:       func(context.Context, account.Named, string) (imapx.Reader, error) { return fakeReader{}, nil },
+		SendMail: func(context.Context, account.Named, string, sendmail.Draft, []byte) error {
+			called = true
+			return nil
+		},
+	}
+	root := NewRoot(rt)
+	root.SetArgs([]string{"--config", configPath, "reply", id, "--to", "reader@example.com", "--body", "thanks", "--execute"})
+	err := root.Execute()
+	if err == nil || errmap.Classify(err).Kind != errmap.Usage || called {
+		t.Fatalf("reply must reject --to with a usage error before any transport: err=%v called=%v", err, called)
+	}
+}

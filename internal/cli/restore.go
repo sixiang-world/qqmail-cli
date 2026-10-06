@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/situker/qqmail-cli/internal/cleaner"
@@ -75,10 +76,20 @@ func newRestoreCommand(rt *Runtime) *cobra.Command {
 			trashID  mailmodel.MsgID
 			folder   string
 			identity imapx.MessageIdentity
+			match    string
 		}
 		found := []located{}
 		notFound := []map[string]any{}
 		warnings := []output.Warning{}
+		// One batched trash scan for the whole plan instead of a per-message
+		// EXAMINE + SEARCH + fetch storm: QQ rejects dense per-message traffic
+		// non-deterministically (docs/compat/qq-20260902.md §4a), and restore
+		// is the regret path — it must not fail for the same reason clean did.
+		scan, err := scanTrash(ctx, mutator, trash)
+		if err != nil {
+			cancel()
+			return err
+		}
 		for _, item := range plan.Items {
 			original, parseErr := mailmodel.ParseMsgID(item.ID)
 			if parseErr != nil {
@@ -90,23 +101,18 @@ func newRestoreCommand(rt *Runtime) *cobra.Command {
 				notFound = append(notFound, map[string]any{"id": item.ID, "reason": "manifest 中没有该邮件的备份记录"})
 				continue
 			}
-			identity := imapx.MessageIdentity{MessageID: entry.MessageID, SizeBytes: entry.Size}
-			matches, locateErr := mutator.LocateByIdentity(ctx, trash, identity)
-			if locateErr != nil {
-				failure, _ := errmap.Details(locateErr)
-				warnings = append(warnings, output.Warning{Code: failure.Code, Message: failure.Message, ID: item.ID, Retryable: failure.Retryable})
+			trashID, match, hit, missReason := locateInScan(ctx, mutator, scan, trash, entry)
+			if !hit {
+				notFound = append(notFound, map[string]any{"id": item.ID, "reason": missReason})
 				continue
 			}
-			if len(matches) == 0 {
-				notFound = append(notFound, map[string]any{"id": item.ID, "reason": "已删除文件夹中找不到该邮件（可能已被服务器回收站周期清空；本地 .eml 备份仍在 backup_root）"})
-				continue
-			}
-			found = append(found, located{planID: item.ID, trashID: matches[0], folder: original.Folder, identity: identity})
+			identity := imapx.MessageIdentity{MessageID: entry.MessageID, SizeBytes: entry.Size, SHA256: entry.SHA256}
+			found = append(found, located{planID: item.ID, trashID: trashID, folder: original.Folder, identity: identity, match: match})
 		}
 		cancel()
 		locatedData := make([]map[string]any, 0, len(found))
 		for _, item := range found {
-			locatedData = append(locatedData, map[string]any{"id": item.planID, "trash_id": item.trashID.String(), "restore_to": item.folder})
+			locatedData = append(locatedData, map[string]any{"id": item.planID, "trash_id": item.trashID.String(), "restore_to": item.folder, "match": item.match})
 		}
 		if !execute {
 			data := map[string]any{"dry_run": true, "execute": false, "requested": len(plan.Items), "located": locatedData, "not_found": notFound, "trash_folder": trash}
@@ -158,4 +164,111 @@ func newRestoreCommand(rt *Runtime) *cobra.Command {
 		return err
 	}
 	return cmd
+}
+
+// trashScan is the per-folder identity index one restore run resolves against:
+// every UID in the trash with its RFC822.SIZE and Message-ID, fetched in
+// bounded chunks from a single EXAMINE.
+type trashScan struct {
+	uidValidity uint32
+	uids        []uint32 // ascending
+	sizeByUID   map[uint32]int64
+	headerByUID map[uint32]string // normalized Message-ID, empty when absent
+	sizeIndex   map[int64][]uint32
+}
+
+const restoreFetchChunk = 500
+
+func scanTrash(ctx context.Context, reader imapx.Reader, trash string) (*trashScan, error) {
+	uidValidity, _, err := reader.Examine(ctx, trash)
+	if err != nil {
+		return nil, err
+	}
+	ids, err := reader.Search(ctx, imapx.SearchFilter{})
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	scan := &trashScan{uidValidity: uidValidity, uids: ids, sizeByUID: map[uint32]int64{}, headerByUID: map[uint32]string{}, sizeIndex: map[int64][]uint32{}}
+	for _, chunk := range chunkRestoreUIDs(ids, restoreFetchChunk) {
+		envelopes, err := reader.FetchEnvelopes(ctx, trash, uidValidity, chunk)
+		if err != nil {
+			return nil, err
+		}
+		for _, envelope := range envelopes {
+			scan.sizeByUID[envelope.UID] = envelope.Size
+			scan.sizeIndex[envelope.Size] = append(scan.sizeIndex[envelope.Size], envelope.UID)
+		}
+	}
+	for _, chunk := range chunkRestoreUIDs(ids, restoreFetchChunk) {
+		headers, err := reader.FetchHeaderFields(ctx, chunk)
+		if err != nil {
+			return nil, err
+		}
+		for _, header := range headers {
+			scan.headerByUID[header.UID] = normalizeMessageIDValue(header.MessageID)
+		}
+	}
+	return scan, nil
+}
+
+// locateInScan resolves one verified manifest entry against the trash index.
+// On a match it returns the trash id and the match method ("message_id" or
+// "sha256") with found=true; otherwise found=false and missReason explains the
+// miss for the review report.
+func locateInScan(ctx context.Context, reader imapx.Reader, scan *trashScan, trash string, entry exporter.Entry) (trashID mailmodel.MsgID, match string, found bool, missReason string) {
+	if normalizeMessageIDValue(entry.MessageID) != "" {
+		want := normalizeMessageIDValue(entry.MessageID)
+		for _, uid := range scan.sizeIndex[entry.Size] {
+			if scan.headerByUID[uid] == want {
+				return mailmodel.MsgID{Folder: trash, UIDValidity: scan.uidValidity, UID: uid}, "message_id", true, ""
+			}
+		}
+		return mailmodel.MsgID{}, "", false, "已删除文件夹中找不到该邮件（按 Message-ID + 大小定位；可能已被服务器回收站周期清空；本地 .eml 备份仍在 backup_root）"
+	}
+	if entry.SHA256 != "" {
+		// The clean gate admits Message-ID-less wild mail on
+		// UIDVALIDITY+UID+RFC822.SIZE, so restore must re-identify it without
+		// the header: exact-size candidates, confirmed by full-body SHA-256
+		// against the verified backup. Identical bytes are interchangeable —
+		// moving any match back is correct.
+		candidates := scan.sizeIndex[entry.Size]
+		if len(candidates) == 0 {
+			return mailmodel.MsgID{}, "", false, "已删除文件夹中找不到该邮件（按大小定位无候选；可能已被服务器回收站周期清空；本地 .eml 备份仍在 backup_root）"
+		}
+		fetched := 0
+		for _, uid := range candidates {
+			if fetched >= restoreFingerprintCap {
+				return mailmodel.MsgID{}, "", false, fmt.Sprintf("已删除文件夹中同尺寸候选超过 %d 封，已停止指纹比对；本地 .eml 备份仍在 backup_root", restoreFingerprintCap)
+			}
+			fetched++
+			raw, truncated, err := reader.FetchBodyPeek(ctx, mailmodel.MsgID{Folder: trash, UIDValidity: scan.uidValidity, UID: uid}, imapx.MaxMessageBytes)
+			if err != nil || truncated {
+				continue
+			}
+			if strings.EqualFold(imapx.SHA256Hex(raw), entry.SHA256) {
+				return mailmodel.MsgID{Folder: trash, UIDValidity: scan.uidValidity, UID: uid}, "sha256", true, ""
+			}
+		}
+		return mailmodel.MsgID{}, "", false, "已删除文件夹中的同尺寸候选均与备份指纹不符；本地 .eml 备份仍在 backup_root"
+	}
+	return mailmodel.MsgID{}, "", false, "manifest 记录缺少 Message-ID 与 SHA-256，无法在已删除文件夹中定位"
+}
+
+const restoreFingerprintCap = 16
+
+func chunkRestoreUIDs(uids []uint32, size int) [][]uint32 {
+	var chunks [][]uint32
+	for start := 0; start < len(uids); start += size {
+		end := start + size
+		if end > len(uids) {
+			end = len(uids)
+		}
+		chunks = append(chunks, uids[start:end])
+	}
+	return chunks
+}
+
+func normalizeMessageIDValue(value string) string {
+	return strings.ToLower(strings.Trim(strings.TrimSpace(value), "<>"))
 }

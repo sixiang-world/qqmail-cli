@@ -191,7 +191,7 @@ func Verify(ctx context.Context, reader imapx.Reader, plan cleanupplan.Plan, nam
 					continue
 				}
 			}
-			eligible[index] = &Eligible{ID: p.id, IDString: plan.Items[index].ID, Identity: imapx.MessageIdentity{MessageID: p.entry.MessageID, SizeBytes: p.entry.Size}}
+			eligible[index] = &Eligible{ID: p.id, IDString: plan.Items[index].ID, Identity: imapx.MessageIdentity{MessageID: p.entry.MessageID, SizeBytes: p.entry.Size, SHA256: p.entry.SHA256}}
 		}
 	}
 

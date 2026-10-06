@@ -4,6 +4,36 @@ All notable development changes are recorded here. Formal releases remain owner-
 
 ## Unreleased
 
+### Fixed (2026-10-05 audit round)
+
+- `restore` can now recover Message-ID-less messages. The clean gate
+  deliberately admits wild mail without a Message-ID header (gated on
+  UIDVALIDITY+UID+RFC822.SIZE), but restore located trash copies only by
+  Message-ID + size, so those messages could never be found again. The trash
+  lookup now falls back to exact-size candidates confirmed by full-body
+  SHA-256 against the verified backup manifest (`located[].match` reports
+  `message_id` or `sha256`). The conservative copy fallback for
+  `message move` on MOVE-less servers confirms destination copies the same way.
+- `restore`'s locate phase scans the trash once per run (one EXAMINE + chunked
+  envelope/header FETCHes) instead of issuing per-message EXAMINE+SEARCH+fetch
+  round trips — the same traffic pattern that tripped QQ's connection-rate
+  limiting during clean (docs/compat/qq-20260902.md §4a).
+- A refused folder SELECT is no longer always reported as `not_found` (exit
+  40, non-retryable): rate-limit responses now map to exit 30 and dropped
+  connections to exit 20, so agents do not mistake a transient state for a
+  permanent one.
+- `message show` in text mode printed the literal `<nil>` for messages without
+  a text part; it now prints `(no text body)`.
+- `reply` rejects `--to` with a usage error instead of silently ignoring it;
+  reply recipients come from the original mail (Reply-To/From).
+
+### Security (2026-10-05)
+
+- `go.mod` now requires `go 1.25.13`, the toolchain that fixes the 28 standard-
+  library vulnerabilities govulncheck reported against go1.25.0 in CI
+  (GO-2026-6218, GO-2026-6090 and related); `actions/setup-go` resolves the
+  toolchain from this directive.
+
 ### Added (2026-09-01 pre-publication hardening round)
 
 - `restore --plan`: the regret window for cleaned mail. Locates each planned

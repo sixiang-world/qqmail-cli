@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/situker/qqmail-cli/internal/errmap"
 	"github.com/situker/qqmail-cli/internal/imapx"
@@ -152,7 +153,18 @@ func fetchMessageIdentity(ctx context.Context, reader imapx.Reader, id mailmodel
 	if err != nil || len(headers) != 1 {
 		return imapx.MessageIdentity{}, &errmap.Error{Kind: errmap.NotFound, Message: "无法读取邮件 Message-ID", Cause: err}
 	}
-	return imapx.MessageIdentity{MessageID: headers[0].MessageID, SizeBytes: envelopes[0].Size}, nil
+	identity := imapx.MessageIdentity{MessageID: headers[0].MessageID, SizeBytes: envelopes[0].Size}
+	if strings.TrimSpace(identity.MessageID) == "" {
+		// Wild messages may legitimately lack a Message-ID. Without the header,
+		// the conservative copy path can only confirm the destination copy by
+		// the backup's full-body fingerprint, so compute it now.
+		raw, truncated, fetchErr := reader.FetchBodyPeek(ctx, id, imapx.MaxMessageBytes)
+		if fetchErr != nil || truncated {
+			return imapx.MessageIdentity{}, &errmap.Error{Kind: errmap.ParseError, Message: "无法计算邮件全文指纹（用于保守移动确认）", Cause: fetchErr}
+		}
+		identity.SHA256 = imapx.SHA256Hex(raw)
+	}
+	return identity, nil
 }
 
 func writeMutationDryRun(rt *Runtime, cmd *cobra.Command, count int, extra map[string]any) error {
