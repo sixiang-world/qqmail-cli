@@ -36,15 +36,30 @@ func (f *writableFixture) recordAppend(info appendRecording) {
 }
 
 // parseAppendLine extracts folder/flags/size from an APPEND command line such
-// as `A005 APPEND "Drafts" (\Draft) {8}`.
+// as `A005 APPEND "Drafts" (\Draft) {8}`. The mailbox may be a quoted string
+// containing spaces ("My Drafts") — the form go-imap emits for any name with
+// whitespace — so the mailbox argument is sliced from the raw line rather than
+// taken from whitespace-split fields.
 func parseAppendLine(line string) appendRecording {
 	var info appendRecording
 	fields := strings.Fields(line)
 	if len(fields) < 3 || !strings.EqualFold(fields[1], "APPEND") {
 		return info
 	}
-	info.folder = strings.Trim(fields[2], `"`)
-	for _, field := range fields[3:] {
+	afterKeyword := line[strings.Index(line, fields[1])+len(fields[1]):]
+	mailbox := strings.TrimSpace(afterKeyword)
+	if strings.HasPrefix(mailbox, `"`) {
+		end := strings.IndexByte(mailbox[1:], '"')
+		if end < 0 {
+			return info
+		}
+		info.folder = mailbox[1 : 1+end]
+		mailbox = mailbox[end+2:]
+	} else {
+		info.folder = fields[2]
+		mailbox = strings.TrimPrefix(mailbox, info.folder)
+	}
+	for _, field := range strings.Fields(mailbox) {
 		if strings.HasPrefix(field, "(") && strings.HasSuffix(field, ")") {
 			info.flags = strings.Fields(strings.Trim(field, "()"))
 		}
@@ -57,12 +72,36 @@ func parseAppendLine(line string) appendRecording {
 	return info
 }
 
+// TestParseAppendLineMailboxForms pins the parser to the mailbox argument
+// shapes the protocol allows: a quoted name with spaces, with and without a
+// flag list, plus the bare-atom form.
+func TestParseAppendLineMailboxForms(t *testing.T) {
+	for _, tc := range []struct {
+		line   string
+		folder string
+		flags  int
+		size   int64
+	}{
+		{`A01 APPEND "My Drafts" (\Draft) {8}`, "My Drafts", 1, 8},
+		{`A02 APPEND "My Drafts" {5}`, "My Drafts", 0, 5},
+		{`A03 APPEND Drafts (\Draft) {8}`, "Drafts", 1, 8},
+	} {
+		got := parseAppendLine(tc.line)
+		if got.folder != tc.folder || len(got.flags) != tc.flags || got.size != tc.size {
+			t.Fatalf("parseAppendLine(%q) = %+v, want folder %q, %d flag(s), size %d", tc.line, got, tc.folder, tc.flags, tc.size)
+		}
+	}
+}
+
 func TestAppendDraftSendsDraftFlag(t *testing.T) {
 	f := newWritableFixture(t) // Task 4 建立的记录型 fake，扩展记录 APPEND
-	if err := f.Mutator.AppendDraft(context.Background(), "Drafts", []byte("MIME-RAW")); err != nil {
+	// The mailbox deliberately contains a space: it pins both the client's
+	// quoted-string serialization and the fixture's parseAppendLine to the
+	// `APPEND "My Drafts" (\Draft) {8}` wire shape.
+	if err := f.Mutator.AppendDraft(context.Background(), "My Drafts", []byte("MIME-RAW")); err != nil {
 		t.Fatalf("AppendDraft: %v", err)
 	}
-	if got := f.LastAppend(); got.folder != "Drafts" || !slices.Contains(got.flags, "\\Draft") || got.size != int64(8) {
+	if got := f.LastAppend(); got.folder != "My Drafts" || !slices.Contains(got.flags, "\\Draft") || got.size != int64(8) {
 		t.Fatalf("append: %+v", got)
 	}
 	if string(f.LastAppend().body) != "MIME-RAW" {

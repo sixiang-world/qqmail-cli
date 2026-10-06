@@ -85,6 +85,12 @@ func newWritableFixture(t *testing.T) *writableFixture {
 					if _, err := io.ReadFull(reader, literal); err == nil {
 						info.body = literal
 					}
+					// A real server consumes the CRLF that terminates the
+					// literal before tagging the response; leaving it in the
+					// reader would resurface as a bogus empty command line.
+					if _, err := reader.ReadString('\n'); err != nil {
+						return
+					}
 				}
 				f.recordAppend(info)
 				_, _ = fmt.Fprintf(tlsConn, "%s OK append done\r\n", tag)
