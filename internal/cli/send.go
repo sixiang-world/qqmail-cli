@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"net/http"
 	"net/mail"
 	"os"
 	"path/filepath"
@@ -26,15 +27,16 @@ import (
 const maxComposeBodyBytes = 1 << 20
 
 type composeOptions struct {
-	To          []string
-	Cc          []string
-	Bcc         []string
-	Subject     string
-	Body        string
-	BodyFile    string
-	BodyFormat  string
-	Attachments []string
-	Execute     bool
+	To           []string
+	Cc           []string
+	Bcc          []string
+	Subject      string
+	Body         string
+	BodyFile     string
+	BodyFormat   string
+	Attachments  []string
+	AttachInline []string
+	Execute      bool
 }
 
 type originalMessage struct {
@@ -137,6 +139,10 @@ func newReplyCommand(rt *Runtime) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		inlines, err := loadInlineAttachments(opts.AttachInline, opts.BodyFormat, attachmentBytes(attachments))
+		if err != nil {
+			return err
+		}
 		subject := opts.Subject
 		if subject == "" {
 			subject = prefixedSubject(original.Parsed.Subject, "Re:")
@@ -146,7 +152,7 @@ func newReplyCommand(rt *Runtime) *cobra.Command {
 			body += "\n\n"
 		}
 		body += quoted
-		draft := sendmail.Draft{From: mail.Address{Address: named.Email}, To: to, Cc: cc, Bcc: bcc, Subject: subject, Body: body, BodyFormat: opts.BodyFormat, Attachments: attachments, InReplyTo: original.Parsed.MessageID, References: original.References}
+		draft := sendmail.Draft{From: mail.Address{Address: named.Email}, To: to, Cc: cc, Bcc: bcc, Subject: subject, Body: body, BodyFormat: opts.BodyFormat, Attachments: attachments, Inlines: inlines, InReplyTo: original.Parsed.MessageID, References: original.References}
 		return runDraft(rt, cmd, named, draft, opts.Execute)
 	}
 	return cmd
@@ -197,6 +203,10 @@ func newForwardCommand(rt *Runtime) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		inlines, err := loadInlineAttachments(opts.AttachInline, opts.BodyFormat, attachmentBytes(attachments))
+		if err != nil {
+			return err
+		}
 		for _, attachment := range original.Parsed.Attachments {
 			attachments = append(attachments, sendmail.Attachment{Filename: attachment.Filename, ContentType: attachment.ContentType, Data: attachment.Data})
 		}
@@ -208,7 +218,7 @@ func newForwardCommand(rt *Runtime) *cobra.Command {
 			body += "\n\n"
 		}
 		body += forwardOriginal(original.Parsed)
-		draft := sendmail.Draft{From: mail.Address{Address: named.Email}, To: to, Cc: cc, Bcc: bcc, Subject: subject, Body: body, BodyFormat: opts.BodyFormat, Attachments: attachments, References: original.References}
+		draft := sendmail.Draft{From: mail.Address{Address: named.Email}, To: to, Cc: cc, Bcc: bcc, Subject: subject, Body: body, BodyFormat: opts.BodyFormat, Attachments: attachments, Inlines: inlines, References: original.References}
 		return runDraft(rt, cmd, named, draft, opts.Execute)
 	}
 	return cmd
@@ -223,6 +233,7 @@ func addComposeFlags(cmd *cobra.Command, opts *composeOptions, requireTo, requir
 	cmd.Flags().StringVar(&opts.BodyFile, "body-file", "", "read plain-text body from a file (maximum 1 MiB)")
 	cmd.Flags().StringVar(&opts.BodyFormat, "body-format", "", "body format: text (default) or html; html is sent verbatim as the text/html part of a multipart/alternative and is never sanitized")
 	cmd.Flags().StringSliceVar(&opts.Attachments, "attach", nil, "attachment paths (20 MiB combined maximum)")
+	cmd.Flags().StringSliceVar(&opts.AttachInline, "attach-inline", nil, "inline image paths referenced by cid: from the HTML body; requires --body-format html (shares the 20 MiB combined maximum with --attach)")
 	cmd.Flags().BoolVar(&opts.Execute, "execute", false, "send after allowlist validation and TTY confirmation")
 	if requireTo {
 		_ = cmd.MarkFlagRequired("to")
@@ -258,7 +269,11 @@ func draftFromOptions(named account.Named, opts composeOptions) (sendmail.Draft,
 	if err != nil {
 		return sendmail.Draft{}, err
 	}
-	return sendmail.Draft{From: mail.Address{Address: named.Email}, To: to, Cc: cc, Bcc: bcc, Subject: opts.Subject, Body: body, BodyFormat: opts.BodyFormat, Attachments: attachments}, nil
+	inlines, err := loadInlineAttachments(opts.AttachInline, opts.BodyFormat, attachmentBytes(attachments))
+	if err != nil {
+		return sendmail.Draft{}, err
+	}
+	return sendmail.Draft{From: mail.Address{Address: named.Email}, To: to, Cc: cc, Bcc: bcc, Subject: opts.Subject, Body: body, BodyFormat: opts.BodyFormat, Attachments: attachments, Inlines: inlines}, nil
 }
 
 func runDraft(rt *Runtime, cmd *cobra.Command, named account.Named, draft sendmail.Draft, execute bool) error {
@@ -326,6 +341,10 @@ func printDraftSummary(w io.Writer, summary sendmail.Summary) {
 		_, _ = fmt.Fprintln(w, "HTML 正文将原样发送，未经消毒；请检查上方源码摘要")
 	}
 	for _, attachment := range summary.Attachments {
+		if attachment.ContentID != "" {
+			_, _ = fmt.Fprintf(w, "Inline: %s (%s, %d bytes, Content-ID: <%s>)\n", output.SanitizeHuman(attachment.Filename), attachment.ContentType, attachment.SizeBytes, output.SanitizeHuman(attachment.ContentID))
+			continue
+		}
 		_, _ = fmt.Fprintf(w, "Attachment: %s (%s, %d bytes)\n", output.SanitizeHuman(attachment.Filename), attachment.ContentType, attachment.SizeBytes)
 	}
 }
@@ -358,8 +377,14 @@ func composeBody(value, path string) (string, error) {
 }
 
 func loadAttachments(paths []string) ([]sendmail.Attachment, error) {
+	return loadAttachmentFiles(paths, 0)
+}
+
+// loadAttachmentFiles is loadAttachments with a running byte total so --attach
+// and --attach-inline honor the 20 MiB combined cap together.
+func loadAttachmentFiles(paths []string, loaded int64) ([]sendmail.Attachment, error) {
 	result := make([]sendmail.Attachment, 0, len(paths))
-	var total int64
+	total := loaded
 	for _, path := range paths {
 		info, err := os.Stat(path)
 		if err != nil {
@@ -380,6 +405,59 @@ func loadAttachments(paths []string) ([]sendmail.Attachment, error) {
 		result = append(result, sendmail.Attachment{Filename: filename, ContentType: mime.TypeByExtension(filepath.Ext(filename)), Data: raw})
 	}
 	return result, nil
+}
+
+// loadInlineAttachments loads the CID-referenced images of an HTML body. A
+// non-html body format is a usage error — inline parts are meaningless without
+// cid: references; the files share the 20 MiB combined cap with --attach and
+// get a generated bare Content-ID each.
+func loadInlineAttachments(paths []string, bodyFormat string, loaded int64) ([]sendmail.Attachment, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	if bodyFormat != "html" {
+		return nil, &errmap.Error{Kind: errmap.Usage, Message: "--attach-inline 需要 --body-format html", Suggestion: "内嵌图由 HTML 正文通过 cid: 引用，只能与 --body-format html 同用；普通附件请改用 --attach"}
+	}
+	inlines, err := loadAttachmentFiles(paths, loaded)
+	if err != nil {
+		return nil, err
+	}
+	for i := range inlines {
+		contentID, err := sendmail.NewContentID()
+		if err != nil {
+			return nil, err
+		}
+		inlines[i].ContentID = contentID
+		inlines[i].ContentType = sniffContentType(inlines[i].Filename, inlines[i].Data)
+	}
+	return inlines, nil
+}
+
+// sniffContentType prefers the extension's registered type, falls back to
+// magic-byte detection for unknown extensions, and defaults to
+// application/octet-stream.
+func sniffContentType(filename string, raw []byte) string {
+	if contentType := mime.TypeByExtension(filepath.Ext(filename)); contentType != "" {
+		return contentType
+	}
+	if len(raw) > 0 {
+		if detected := http.DetectContentType(raw); detected != "" {
+			if mediaType, _, err := mime.ParseMediaType(detected); err == nil && mediaType != "application/octet-stream" {
+				return mediaType
+			}
+		}
+	}
+	return "application/octet-stream"
+}
+
+// attachmentBytes sums loaded attachment sizes so inline loading continues the
+// same combined cap.
+func attachmentBytes(attachments []sendmail.Attachment) int64 {
+	var total int64
+	for _, attachment := range attachments {
+		total += int64(len(attachment.Data))
+	}
+	return total
 }
 
 func parseAddresses(values []string) ([]mail.Address, error) {

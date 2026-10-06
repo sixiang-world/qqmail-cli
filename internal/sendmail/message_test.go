@@ -247,6 +247,162 @@ func TestDerivePlainText(t *testing.T) {
 	}
 }
 
+// Package-level send/receive fixtures shared by the inline-image tests.
+var (
+	from = mail.Address{Address: "sender@qq.com"}
+	to   = mail.Address{Address: "reader@example.com"}
+)
+
+// pngBytes is the PNG magic signature; Build treats inline data as opaque, so
+// the signature is all a build-path test needs.
+var pngBytes = []byte("\x89PNG\r\n\x1a\n")
+
+// relatedParts mirrors the multipart/related node of a parsed message together
+// with its direct children (go-message has no Parts accessor, so the test
+// materializes them from the walk paths).
+type relatedParts struct {
+	root  *gomessage.Entity
+	parts []*gomessage.Entity
+}
+
+// findRelatedPart parses raw and returns the first multipart/related entity
+// with its direct children, in wire order.
+func findRelatedPart(t *testing.T, raw []byte) (*relatedParts, bool) {
+	t.Helper()
+	entity, err := gomessage.Read(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatalf("MIME parse: %v", err)
+	}
+	type node struct {
+		path   []int
+		entity *gomessage.Entity
+	}
+	var nodes []node
+	if err := entity.Walk(func(path []int, part *gomessage.Entity, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		nodes = append(nodes, node{path: path, entity: part})
+		return nil
+	}); err != nil {
+		t.Fatalf("entity walk: %v", err)
+	}
+	var relatedPath []int
+	result := &relatedParts{}
+	found := false
+	for _, n := range nodes {
+		mediaType, _, _ := mime.ParseMediaType(n.entity.Header.Get("Content-Type"))
+		if mediaType == "multipart/related" {
+			relatedPath, found = n.path, true
+			result.root = n.entity
+			break
+		}
+	}
+	if !found {
+		return nil, false
+	}
+	isDirectChild := func(p []int) bool {
+		if len(p) != len(relatedPath)+1 {
+			return false
+		}
+		for i, index := range relatedPath {
+			if p[i] != index {
+				return false
+			}
+		}
+		return true
+	}
+	for _, n := range nodes {
+		if isDirectChild(n.path) {
+			result.parts = append(result.parts, n.entity)
+		}
+	}
+	return result, true
+}
+
+// findAlternativeIn reports whether entity is (or contains) a
+// multipart/alternative part.
+func findAlternativeIn(t *testing.T, entity *gomessage.Entity) (*gomessage.Entity, bool) {
+	t.Helper()
+	if mediaType, _, _ := mime.ParseMediaType(entity.Header.Get("Content-Type")); mediaType == "multipart/alternative" {
+		return entity, true
+	}
+	var alternative *gomessage.Entity
+	if err := entity.Walk(func(path []int, part *gomessage.Entity, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if part == entity {
+			return nil
+		}
+		if mediaType, _, _ := mime.ParseMediaType(part.Header.Get("Content-Type")); mediaType == "multipart/alternative" && alternative == nil {
+			alternative = part
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("entity walk: %v", err)
+	}
+	return alternative, alternative != nil
+}
+
+func TestBuildInlineImagesProducesRelated(t *testing.T) {
+	raw, err := Build(Draft{From: from, To: []mail.Address{to}, Subject: "s",
+		Body: `<p>见图 <img src="cid:image001"></p>`, BodyFormat: "html",
+		Inlines: []Attachment{{Filename: "logo.png", ContentType: "image/png", ContentID: "image001", Data: []byte(pngBytes)}}})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	rel, ok := findRelatedPart(t, raw)
+	if !ok {
+		t.Fatal("want multipart/related")
+	}
+	if _, ok := findAlternativeIn(t, rel.parts[0]); !ok {
+		t.Fatal("related root must be the alternative")
+	}
+	if len(rel.parts) != 2 {
+		t.Fatalf("related has %d parts, want 2 (alternative + image)", len(rel.parts))
+	}
+	img := rel.parts[1]
+	if img.Header.Get("Content-Id") != "<image001>" { // Build 侧负责尖括号包裹
+		t.Fatalf("Content-Id = %q", img.Header.Get("Content-Id"))
+	}
+	if !strings.Contains(img.Header.Get("Content-Disposition"), "inline") {
+		t.Fatalf("disposition = %q", img.Header.Get("Content-Disposition"))
+	}
+}
+
+func TestBuildInlineRequiresHTMLBody(t *testing.T) {
+	_, err := Build(Draft{From: from, To: []mail.Address{to}, Subject: "s",
+		Inlines: []Attachment{{Filename: "a.png", ContentID: "x", Data: []byte("p")}}})
+	if err == nil || !strings.Contains(err.Error(), "html") {
+		t.Fatalf("want error: inline attachments require an html body, got %v", err)
+	}
+}
+
+func TestInlineHeaderInjectionRejected(t *testing.T) {
+	// Filename 或 ContentID 含 \r/\n → Build 返回错误（既有头部注入防御扩展）
+	for _, tc := range []struct {
+		name    string
+		inlines []Attachment
+	}{
+		{"crlf in filename", []Attachment{{Filename: "a\r\nBcc: bad@example.com", ContentID: "x", Data: []byte("p")}}},
+		{"crlf in content id", []Attachment{{Filename: "a.png", ContentID: "x\r\nBcc: bad@example.com", Data: []byte("p")}}},
+	} {
+		draft := Draft{From: from, To: []mail.Address{to}, Subject: "s", Body: "<p>x</p>", BodyFormat: "html", Inlines: tc.inlines}
+		if _, err := Build(draft); err == nil {
+			t.Fatalf("%s: expected inline header injection rejection", tc.name)
+		}
+	}
+}
+
+func TestNewContentIDUniqueAndBare(t *testing.T) {
+	a, err1 := NewContentID()
+	b, err2 := NewContentID()
+	if err1 != nil || err2 != nil || a == b || strings.ContainsAny(a, "<>") {
+		t.Fatalf("content ids: %q %q (%v %v)", a, b, err1, err2)
+	}
+}
+
 func TestBuildRejectsUnknownBodyFormat(t *testing.T) {
 	_, err := Build(Draft{From: mail.Address{Address: "a@example.com"}, To: []mail.Address{{Address: "b@example.com"}}, Body: "hi", BodyFormat: "markdown"})
 	if err == nil {

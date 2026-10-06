@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"html"
+	"io"
 	"mime"
 	"mime/multipart"
 	"mime/quotedprintable"
@@ -34,7 +36,10 @@ const (
 type Attachment struct {
 	Filename    string `json:"filename"`
 	ContentType string `json:"content_type"`
-	Data        []byte `json:"-"`
+	// ContentID is the bare Content-ID (no angle brackets) for inline parts;
+	// Build wraps it in <...> when writing the Content-Id header.
+	ContentID string `json:"content_id,omitempty"`
+	Data      []byte `json:"-"`
 }
 
 type Draft struct {
@@ -46,15 +51,19 @@ type Draft struct {
 	Body        string
 	BodyFormat  string
 	Attachments []Attachment
-	InReplyTo   string
-	References  []string
-	Date        time.Time
+	// Inlines are the CID-referenced parts (inline images) of an HTML body;
+	// they require BodyFormat "html" and become a multipart/related wrapper.
+	Inlines    []Attachment
+	InReplyTo  string
+	References []string
+	Date       time.Time
 }
 
 type AttachmentSummary struct {
 	Filename    string `json:"filename"`
 	ContentType string `json:"content_type"`
 	SizeBytes   int    `json:"size_bytes"`
+	ContentID   string `json:"content_id,omitempty"`
 }
 
 type Summary struct {
@@ -110,7 +119,7 @@ func Build(draft Draft) ([]byte, error) {
 		}
 	}
 	var output bytes.Buffer
-	if len(draft.Attachments) == 0 && draft.BodyFormat != "html" {
+	if len(draft.Attachments) == 0 && len(draft.Inlines) == 0 && draft.BodyFormat != "html" {
 		headers = append(headers, header{"Content-Type", `text/plain; charset="UTF-8"`}, header{"Content-Transfer-Encoding", "quoted-printable"})
 		writeHeaders(&output, headers)
 		writer := quotedprintable.NewWriter(&output)
@@ -120,7 +129,7 @@ func Build(draft Draft) ([]byte, error) {
 		}
 		return output.Bytes(), nil
 	}
-	if len(draft.Attachments) == 0 {
+	if len(draft.Attachments) == 0 && len(draft.Inlines) == 0 {
 		// HTML body without attachments: the alternative pair is the whole
 		// message body.
 		multipartWriter := multipart.NewWriter(&output)
@@ -134,30 +143,59 @@ func Build(draft Draft) ([]byte, error) {
 		}
 		return output.Bytes(), nil
 	}
+	if len(draft.Attachments) == 0 {
+		// Inline images without regular attachments: the related container is
+		// the whole message body — the alternative pair as its root part,
+		// then one inline part per CID image.
+		relatedWriter := multipart.NewWriter(&output)
+		headers = append(headers, header{"Content-Type", fmt.Sprintf(`multipart/related; boundary="%s"; type="multipart/alternative"`, relatedWriter.Boundary())})
+		writeHeaders(&output, headers)
+		if err := writeAlternativePart(relatedWriter, draft.Body); err != nil {
+			return nil, err
+		}
+		if err := writeInlineParts(relatedWriter, draft.Inlines); err != nil {
+			return nil, err
+		}
+		if err := relatedWriter.Close(); err != nil {
+			return nil, err
+		}
+		return output.Bytes(), nil
+	}
 	multipartWriter := multipart.NewWriter(&output)
 	headers = append(headers, header{"Content-Type", fmt.Sprintf(`multipart/mixed; boundary="%s"`, multipartWriter.Boundary())})
 	writeHeaders(&output, headers)
-	if draft.BodyFormat == "html" {
-		// The alternative (text+html) pair replaces the bare text part;
-		// the attachment loop below is unchanged.
-		var alternative bytes.Buffer
-		alternativeWriter := multipart.NewWriter(&alternative)
-		if err := writeAlternativeBody(alternativeWriter, draft.Body); err != nil {
+	switch {
+	case len(draft.Inlines) > 0:
+		// With both regular attachments and inline images the body part
+		// becomes a multipart/related container (alternative pair plus one
+		// part per inline image); the attachments follow at the mixed level.
+		var related bytes.Buffer
+		relatedWriter := multipart.NewWriter(&related)
+		if err := writeAlternativePart(relatedWriter, draft.Body); err != nil {
 			return nil, err
 		}
-		if err := alternativeWriter.Close(); err != nil {
+		if err := writeInlineParts(relatedWriter, draft.Inlines); err != nil {
 			return nil, err
 		}
-		textHeader := textproto.MIMEHeader{}
-		textHeader.Set("Content-Type", fmt.Sprintf(`multipart/alternative; boundary="%s"`, alternativeWriter.Boundary()))
-		part, err := multipartWriter.CreatePart(textHeader)
+		if err := relatedWriter.Close(); err != nil {
+			return nil, err
+		}
+		relatedHeader := textproto.MIMEHeader{}
+		relatedHeader.Set("Content-Type", fmt.Sprintf(`multipart/related; boundary="%s"; type="multipart/alternative"`, relatedWriter.Boundary()))
+		part, err := multipartWriter.CreatePart(relatedHeader)
 		if err != nil {
 			return nil, err
 		}
-		if _, err := part.Write(alternative.Bytes()); err != nil {
+		if _, err := part.Write(related.Bytes()); err != nil {
 			return nil, err
 		}
-	} else {
+	case draft.BodyFormat == "html":
+		// The alternative (text+html) pair replaces the bare text part;
+		// the attachment loop below is unchanged.
+		if err := writeAlternativePart(multipartWriter, draft.Body); err != nil {
+			return nil, err
+		}
+	default:
 		textHeader := textproto.MIMEHeader{}
 		textHeader.Set("Content-Type", `text/plain; charset="UTF-8"`)
 		textHeader.Set("Content-Transfer-Encoding", "quoted-printable")
@@ -186,14 +224,7 @@ func Build(draft Draft) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		encoded := base64.StdEncoding.EncodeToString(attachment.Data)
-		for len(encoded) > 76 {
-			_, _ = fmt.Fprintf(part, "%s\r\n", encoded[:76])
-			encoded = encoded[76:]
-		}
-		if encoded != "" {
-			_, _ = fmt.Fprintf(part, "%s\r\n", encoded)
-		}
+		writeBase64Body(part, attachment.Data)
 	}
 	if err := multipartWriter.Close(); err != nil {
 		return nil, err
@@ -252,6 +283,67 @@ func writeAlternativeBody(w *multipart.Writer, body string) error {
 	return quoted.Close()
 }
 
+// writeAlternativePart attaches the alternative (text+html) pair to root as a
+// single nested multipart/alternative part — the body section shared by the
+// mixed and related assemblies.
+func writeAlternativePart(root *multipart.Writer, body string) error {
+	var alternative bytes.Buffer
+	alternativeWriter := multipart.NewWriter(&alternative)
+	if err := writeAlternativeBody(alternativeWriter, body); err != nil {
+		return err
+	}
+	if err := alternativeWriter.Close(); err != nil {
+		return err
+	}
+	partHeader := textproto.MIMEHeader{}
+	partHeader.Set("Content-Type", fmt.Sprintf(`multipart/alternative; boundary="%s"`, alternativeWriter.Boundary()))
+	part, err := root.CreatePart(partHeader)
+	if err != nil {
+		return err
+	}
+	_, err = part.Write(alternative.Bytes())
+	return err
+}
+
+// writeInlineParts appends one part per inline image: sniffed content type, a
+// Content-Id header (Build owns the angle-bracket wrapping so a bare or
+// bracketed cid both end up correct), and an inline disposition using the same
+// RFC 2231 filename encoding as regular attachments.
+func writeInlineParts(w *multipart.Writer, inlines []Attachment) error {
+	for i, inline := range inlines {
+		filename := safeio.SanitizeFilename(inline.Filename, fmt.Sprintf("inline-%d", i+1))
+		contentType := inline.ContentType
+		if contentType == "" {
+			contentType = mime.TypeByExtension(filepath.Ext(filename))
+		}
+		contentType = safeContentType(contentType)
+		partHeader := textproto.MIMEHeader{}
+		partHeader.Set("Content-Type", mime.FormatMediaType(contentType, map[string]string{"name": filename}))
+		partHeader.Set("Content-Id", formatMessageID(inline.ContentID))
+		partHeader.Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": filename}))
+		partHeader.Set("Content-Transfer-Encoding", "base64")
+		part, err := w.CreatePart(partHeader)
+		if err != nil {
+			return err
+		}
+		writeBase64Body(part, inline.Data)
+	}
+	return nil
+}
+
+// writeBase64Body writes data as base64 folded into 76-character lines — the
+// shared transfer encoding for attachment and inline parts.
+func writeBase64Body(part io.Writer, data []byte) {
+	encoded := base64.StdEncoding.EncodeToString(data)
+	for len(encoded) > 76 {
+		_, _ = fmt.Fprintf(part, "%s\r\n", encoded[:76])
+		encoded = encoded[76:]
+	}
+	if encoded != "" {
+		_, _ = fmt.Fprintf(part, "%s\r\n", encoded)
+	}
+}
+
 func Summarize(draft Draft, allowlist []string) Summary {
 	denied := DeniedRecipients(draft, allowlist)
 	summary := Summary{From: draft.From.String(), To: addressStrings(draft.To), Cc: addressStrings(draft.Cc), Bcc: addressStrings(draft.Bcc), Subject: draft.Subject, BodySummary: truncateRunes(strings.TrimSpace(draft.Body), 240), Attachments: []AttachmentSummary{}, RecipientCount: len(draft.To) + len(draft.Cc) + len(draft.Bcc), AllowlistReady: len(allowlist) > 0 && len(denied) == 0, DeniedRecipients: denied}
@@ -263,6 +355,10 @@ func Summarize(draft Draft, allowlist []string) Summary {
 	for i, attachment := range draft.Attachments {
 		filename := safeio.SanitizeFilename(attachment.Filename, fmt.Sprintf("attachment-%d", i+1))
 		summary.Attachments = append(summary.Attachments, AttachmentSummary{Filename: filename, ContentType: attachment.ContentType, SizeBytes: len(attachment.Data)})
+	}
+	for i, inline := range draft.Inlines {
+		filename := safeio.SanitizeFilename(inline.Filename, fmt.Sprintf("inline-%d", i+1))
+		summary.Attachments = append(summary.Attachments, AttachmentSummary{Filename: filename, ContentType: inline.ContentType, SizeBytes: len(inline.Data), ContentID: inline.ContentID})
 	}
 	return summary
 }
@@ -336,8 +432,27 @@ func validateDraft(draft Draft) error {
 	for _, attachment := range draft.Attachments {
 		total += int64(len(attachment.Data))
 	}
+	for _, inline := range draft.Inlines {
+		total += int64(len(inline.Data))
+	}
 	if total > MaxTotalAttachmentBytes {
 		return fmt.Errorf("attachments exceed %d bytes", MaxTotalAttachmentBytes)
+	}
+	if len(draft.Inlines) > 0 {
+		if draft.BodyFormat != "html" {
+			return fmt.Errorf("内嵌附件需要 --body-format html")
+		}
+		for _, inline := range draft.Inlines {
+			if strings.ContainsAny(inline.Filename, "\r\n") || strings.ContainsAny(inline.ContentID, "\r\n") {
+				return fmt.Errorf("inline attachment header contains a line break")
+			}
+			if strings.ContainsFunc(inline.ContentID, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+				return fmt.Errorf("inline attachment content id contains a control character")
+			}
+			if strings.TrimSpace(inline.ContentID) == "" {
+				return fmt.Errorf("inline attachment requires a content id")
+			}
+		}
 	}
 	return nil
 }
@@ -392,6 +507,17 @@ func newMessageID(address string) (string, error) {
 		domain = address[at+1:]
 	}
 	return fmt.Sprintf("<%x@%s>", raw, domain), nil
+}
+
+// NewContentID returns a fresh bare Content-ID ("hex@qqmail-cli.local", no
+// angle brackets — Build wraps it when writing the Content-Id header). Like
+// newMessageID it returns the rand failure instead of panicking.
+func NewContentID() (string, error) {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s@qqmail-cli.local", hex.EncodeToString(b[:])), nil
 }
 
 func formatMessageID(value string) string {
