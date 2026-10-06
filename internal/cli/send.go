@@ -495,7 +495,7 @@ func loadInlineAttachments(paths []string, bodyFormat string, loaded int64) ([]s
 		return nil, nil
 	}
 	if bodyFormat != "html" {
-		return nil, &errmap.Error{Kind: errmap.Usage, Message: "--attach-inline 需要 --body-format html", Suggestion: "内嵌图由 HTML 正文通过 cid: 引用，只能与 --body-format html 同用；普通附件请改用 --attach"}
+		return nil, &errmap.Error{Kind: errmap.Usage, Message: "--attach-inline 需要 --body-format html", Suggestion: "内嵌图由 HTML 正文以 cid:<文件名@qqmail-cli.local> 引用（Content-ID 为 <文件名@qqmail-cli.local>，dry-run 预览会列出每个文件的确切引用），只能与 --body-format html 同用；普通附件请改用 --attach"}
 	}
 	contentIDs := make([]string, len(paths))
 	derived := make(map[string]string, len(paths))
