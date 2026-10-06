@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/situker/qqmail-cli/internal/imapx"
 	"github.com/situker/qqmail-cli/internal/output"
@@ -51,14 +50,5 @@ func runServerSearch(rt *Runtime, cmd *cobra.Command, query string, limit int) e
 	if rt.JSON {
 		return writeDetailed(rt, cmd, data, nil, output.Meta{Account: named.Name, SearchMode: searchModeForField()})
 	}
-	for _, envelope := range envelopes {
-		from := ""
-		if len(envelope.From) > 0 {
-			from = envelope.From[0].Email
-		}
-		if _, err := fmt.Fprintf(rt.Out, "%10d  %-25s  %s\n", envelope.UID, output.SanitizeHuman(from), output.SanitizeHuman(envelope.Subject)); err != nil {
-			return err
-		}
-	}
-	return nil
+	return printEnvelopeRows(rt.Out, envelopes)
 }

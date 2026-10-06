@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -112,19 +113,26 @@ func newEnvelopeCommand(rt *Runtime) *cobra.Command {
 			}
 			return writeDetailed(rt, cmd, data, nil, output.Meta{Account: named.Name, SearchMode: mode, FiltersApplied: filtersApplied})
 		}
-		for _, envelope := range envelopes {
-			from := ""
-			if len(envelope.From) > 0 {
-				from = envelope.From[0].Email
-			}
-			if _, err := fmt.Fprintf(rt.Out, "%10d  %-25s  %s\n", envelope.UID, output.SanitizeHuman(from), output.SanitizeHuman(envelope.Subject)); err != nil {
-				return err
-			}
-		}
-		return nil
+		return printEnvelopeRows(rt.Out, envelopes)
 	}
 	root.AddCommand(cmd)
 	return root
+}
+
+// printEnvelopeRows writes the human envelope table shared by `envelope list`
+// and `search --server`: one row per envelope with the UID right-aligned, the
+// first sender address and the sanitized subject.
+func printEnvelopeRows(w io.Writer, envelopes []mailmodel.Envelope) error {
+	for _, envelope := range envelopes {
+		from := ""
+		if len(envelope.From) > 0 {
+			from = envelope.From[0].Email
+		}
+		if _, err := fmt.Fprintf(w, "%10d  %-25s  %s\n", envelope.UID, output.SanitizeHuman(from), output.SanitizeHuman(envelope.Subject)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func listEnvelopes(ctx context.Context, reader imapx.Reader, folder string, filter imapx.SearchFilter) ([]mailmodel.Envelope, uint32, string, error) {

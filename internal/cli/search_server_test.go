@@ -8,6 +8,7 @@ import (
 
 	"github.com/situker/qqmail-cli/internal/errmap"
 	"github.com/situker/qqmail-cli/internal/imapx"
+	"github.com/situker/qqmail-cli/internal/mailmodel"
 )
 
 func TestSearchRequiresExactlyOneMode(t *testing.T) {
@@ -77,5 +78,37 @@ func mustUnmarshal(t *testing.T, raw string, target any) {
 	t.Helper()
 	if err := json.Unmarshal([]byte(raw), target); err != nil {
 		t.Fatalf("invalid JSON output: %v\n%s", err, raw)
+	}
+}
+
+// envelopeRowReader serves one fixed envelope so the human table of
+// `envelope list` and `search --server` can be compared byte for byte.
+type envelopeRowReader struct{ fakeReader }
+
+func (envelopeRowReader) Search(context.Context, imapx.SearchFilter) ([]uint32, error) {
+	return []uint32{42}, nil
+}
+
+func (envelopeRowReader) FetchEnvelopes(context.Context, string, uint32, []uint32) ([]mailmodel.Envelope, error) {
+	return []mailmodel.Envelope{{
+		UID:     42,
+		Subject: "hello world",
+		From:    []mailmodel.Address{{Email: "alice@example.com"}},
+	}}, nil
+}
+
+// printEnvelopeRows is the one human-table implementation shared by both
+// envelope-listing commands; this pins its exact bytes so the commands can
+// never drift apart again.
+func TestEnvelopeHumanRowsIdenticalAcrossCommands(t *testing.T) {
+	want := "        42  alice@example.com" + strings.Repeat(" ", 25-len("alice@example.com")) + "  hello world\n"
+	for _, args := range [][]string{
+		{"envelope", "list"},
+		{"search", "发票", "--server"},
+	} {
+		out := runCLIReader(t, envelopeRowReader{}, args...)
+		if out != want {
+			t.Fatalf("%v human rows = %q, want %q", args, out, want)
+		}
 	}
 }
