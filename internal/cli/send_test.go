@@ -702,10 +702,43 @@ func TestSendRejectsUnknownBodyFormatWithUsageExitCode(t *testing.T) {
 	root := NewRoot(rt)
 	root.SetArgs([]string{"--config", configPath, "send", "--to", "reader@example.com", "--subject", "fixture", "--body", "hi", "--body-format", "rich"})
 	err := root.Execute()
-	// The rejection must name the offending value (as the Build-side whitelist
-	// error does), not just any generic usage failure.
+	// The rejection must name the offending value: validateBodyFormat rejects
+	// it before draft assembly, and the Build-side whitelist stays as defense
+	// in depth — not just any generic usage failure.
 	if err == nil || errmap.Classify(err).Kind != errmap.Usage || !strings.Contains(err.Error(), "rich") {
 		t.Fatalf("invalid --body-format must be a usage error (exit %d) naming the value, got %v", output.ExitUsage, err)
+	}
+}
+
+// reply and forward share the flag and must reject an unknown --body-format
+// before they even connect: the check runs before loadOriginal opens the
+// IMAP connection.
+func TestReplyAndForwardRejectUnknownBodyFormatBeforeConnecting(t *testing.T) {
+	t.Setenv("QQMAIL_CLI_READONLY", "0")
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"reply", []string{"reply", replyAllMsgID, "--body", "thanks", "--body-format", "rich"}},
+		{"forward", []string{"forward", replyAllMsgID, "--to", "reader@example.com", "--body", "FYI", "--body-format", "rich"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			configPath := saveSendConfig(t, []string{"sender@example.com", "reader@example.com"})
+			rt := &Runtime{
+				Out: &bytes.Buffer{}, Err: &bytes.Buffer{}, In: strings.NewReader(""),
+				Secrets: &secrets.Memory{Values: map[string]string{"user@qq.com": testAuthCode}},
+				Dial: func(context.Context, account.Named, string) (imapx.Reader, error) {
+					t.Fatal("must not connect before the body-format check")
+					return nil, nil
+				},
+			}
+			root := NewRoot(rt)
+			root.SetArgs(append([]string{"--config", configPath}, tc.args...))
+			err := root.Execute()
+			if err == nil || errmap.Classify(err).Kind != errmap.Usage || !strings.Contains(err.Error(), "rich") {
+				t.Fatalf("invalid --body-format must be an early usage error naming the value, got %v", err)
+			}
+		})
 	}
 }
 

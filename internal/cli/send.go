@@ -59,6 +59,9 @@ func newSendCommand(rt *Runtime) *cobra.Command {
 	cmd := &cobra.Command{Use: "send", Short: "Compose mail; dry-run unless --execute is allowlisted and confirmed", Args: cobra.NoArgs}
 	addComposeFlags(cmd, &opts, true, true)
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+		if err := validateBodyFormat(opts.BodyFormat); err != nil {
+			return err
+		}
 		if opts.Execute {
 			if err := policy.RequireMutationAllowed(); err != nil {
 				return err
@@ -84,6 +87,9 @@ func newReplyCommand(rt *Runtime) *cobra.Command {
 	addComposeFlags(cmd, &opts, false, false)
 	cmd.Flags().BoolVar(&replyAll, "reply-all", false, "also address the original To/Cc recipients (minus your own address)")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if err := validateBodyFormat(opts.BodyFormat); err != nil {
+			return err
+		}
 		if opts.Execute {
 			if err := policy.RequireMutationAllowed(); err != nil {
 				return err
@@ -168,6 +174,9 @@ func newForwardCommand(rt *Runtime) *cobra.Command {
 	cmd := &cobra.Command{Use: "forward <id>", Args: cobra.ExactArgs(1), Short: "Forward a quoted message and its attachments; dry-run by default"}
 	addComposeFlags(cmd, &opts, true, false)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if err := validateBodyFormat(opts.BodyFormat); err != nil {
+			return err
+		}
 		if opts.Execute {
 			if err := policy.RequireMutationAllowed(); err != nil {
 				return err
@@ -235,6 +244,19 @@ func newForwardCommand(rt *Runtime) *cobra.Command {
 		return runDraft(rt, cmd, named, draft, opts.Execute, opts.SaveDraft)
 	}
 	return cmd
+}
+
+// validateBodyFormat rejects unknown --body-format values at the CLI layer so
+// they surface as a usage error before any draft assembly (attachment loaders,
+// original-mail fetch, Build) instead of the generic "cannot build" wrapper.
+// validateDraft keeps the same whitelist as defense in depth.
+func validateBodyFormat(value string) error {
+	switch value {
+	case "", "text", "html":
+		return nil
+	default:
+		return &errmap.Error{Kind: errmap.Usage, Message: fmt.Sprintf("--body-format 只接受 text 或 html，收到 %q", value)}
+	}
 }
 
 func addComposeFlags(cmd *cobra.Command, opts *composeOptions, requireTo, requireSubject bool) {
