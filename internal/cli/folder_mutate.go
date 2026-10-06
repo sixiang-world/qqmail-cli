@@ -57,7 +57,7 @@ func newFolderCreateCommand(rt *Runtime) *cobra.Command {
 		}
 		defer func() { _ = store.Close() }()
 		service := policy.New(mutator, store)
-		if err := service.CreateFolder(ctx, name, commandName(cmd)); err != nil {
+		if err := service.CreateMailbox(ctx, name, commandName(cmd)); err != nil {
 			return err
 		}
 		return writeMutationResult(rt, cmd, named.Name, 1, []string{name}, nil, map[string]any{"action": "folder_create", "name": name})
@@ -97,7 +97,7 @@ func newFolderRenameCommand(rt *Runtime) *cobra.Command {
 		}
 		defer func() { _ = store.Close() }()
 		service := policy.New(mutator, store)
-		if err := service.RenameFolder(ctx, oldName, newName, commandName(cmd)); err != nil {
+		if err := service.RenameMailbox(ctx, oldName, newName, commandName(cmd)); err != nil {
 			return err
 		}
 		return writeMutationResult(rt, cmd, named.Name, 1, []string{newName}, nil, map[string]any{"action": "folder_rename", "old": oldName, "new": newName})

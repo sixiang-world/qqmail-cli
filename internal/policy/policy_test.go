@@ -155,10 +155,10 @@ func TestFolderVerbsAuditAttemptThenResult(t *testing.T) {
 	writer := &fakeMutator{}
 	store := openAuditStore(t)
 	service := New(writer, store)
-	if err := service.CreateFolder(context.Background(), "arch/2026", "folder.create"); err != nil || len(writer.created) != 1 {
+	if err := service.CreateMailbox(context.Background(), "arch/2026", "folder.create"); err != nil || len(writer.created) != 1 {
 		t.Fatalf("create positive path: calls=%d err=%v", len(writer.created), err)
 	}
-	if err := service.RenameFolder(context.Background(), "arch/2026", "arch/2027", "folder.rename"); err != nil || len(writer.renamed) != 1 {
+	if err := service.RenameMailbox(context.Background(), "arch/2026", "arch/2027", "folder.rename"); err != nil || len(writer.renamed) != 1 {
 		t.Fatalf("rename positive path: calls=%d err=%v", len(writer.renamed), err)
 	}
 	// AuditList is newest-first: for each verb the ok record precedes the
