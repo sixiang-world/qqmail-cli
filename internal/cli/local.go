@@ -57,17 +57,21 @@ func newSyncCommand(rt *Runtime) *cobra.Command {
 }
 
 func newLocalSearchCommand(rt *Runtime) *cobra.Command {
-	var local bool
+	var local, server bool
 	var limit int
-	cmd := &cobra.Command{Use: "search <query>", Args: cobra.ExactArgs(1), Short: "Search the local FTS5 index"}
-	cmd.Flags().BoolVar(&local, "local", false, "required: search the local index without contacting the server")
+	cmd := &cobra.Command{Use: "search <query>", Args: cobra.ExactArgs(1), Short: "Search the local FTS5 index or the IMAP server"}
+	cmd.Flags().BoolVar(&local, "local", false, "search the local index without contacting the server")
+	cmd.Flags().BoolVar(&server, "server", false, "search the IMAP server without the local index")
 	cmd.Flags().IntVar(&limit, "limit", 50, "maximum hits (1-500)")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if !local {
-			return &errmap.Error{Kind: errmap.Usage, Message: "search 当前只支持 --local"}
+		if local == server {
+			return &errmap.Error{Kind: errmap.Usage, Message: "search 需要 --local 或 --server 恰选其一"}
 		}
 		if limit < 1 || limit > 500 {
 			return &errmap.Error{Kind: errmap.Usage, Message: "--limit 必须在 1 到 500 之间"}
+		}
+		if server {
+			return runServerSearch(rt, cmd, args[0], limit)
 		}
 		_, _, named, err := rt.loadAccount()
 		if err != nil {

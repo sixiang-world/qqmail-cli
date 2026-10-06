@@ -223,6 +223,9 @@ func (c *Client) Examine(ctx context.Context, folder string) (uint32, uint32, er
 	return selected.UIDValidity, selected.NumMessages, nil
 }
 
+// ServerSearchField 由 docs/compat/qq-20261006.md 的探测结论定案；见该文档。
+const ServerSearchField = "TEXT"
+
 func (c *Client) Search(ctx context.Context, filter SearchFilter) ([]uint32, error) {
 	criteria := &imap.SearchCriteria{Since: filter.Since}
 	if !filter.Before.IsZero() {
@@ -241,7 +244,12 @@ func (c *Client) Search(ctx context.Context, filter SearchFilter) ([]uint32, err
 		criteria.Header = append(criteria.Header, imap.SearchCriteriaHeaderField{Key: "Subject", Value: filter.Subject})
 	}
 	if filter.Text != "" {
-		criteria.Text = append(criteria.Text, filter.Text)
+		switch ServerSearchField {
+		case "BODY":
+			criteria.Body = []string{filter.Text}
+		default:
+			criteria.Text = append(criteria.Text, filter.Text)
+		}
 	}
 	if filter.AfterUID > 0 || filter.BeforeUID > 1 {
 		start, stop := imap.UID(1), imap.UID(0)
