@@ -12,8 +12,24 @@ import (
 )
 
 func TestSearchRequiresExactlyOneMode(t *testing.T) {
-	runExit(t, 2, "search", "x", "--json")                        // 无模式 → usage
-	runExit(t, 2, "search", "x", "--local", "--server", "--json") // 双模式 → usage
+	// 双缺与双给都必须落在 usage 退出码上，且错误消息保留"恰选其一"的指路
+	// 文案：若将来有人把校验改写成语义不明的通用 usage，用户就再也无从得知
+	// --local/--server 是互斥且必选其一的。
+	for _, args := range [][]string{
+		{"search", "x", "--json"},                        // 双缺 → usage
+		{"search", "x", "--local", "--server", "--json"}, // 双给 → usage
+	} {
+		_, err := tryRunCLI(t, fakeReader{}, args)
+		if err == nil {
+			t.Fatalf("command %v unexpectedly succeeded", args)
+		}
+		if _, code := errmap.Details(err); code != 2 {
+			t.Fatalf("command %v: exit code %d, want 2: %v", args, code, err)
+		}
+		if !strings.Contains(err.Error(), "恰选其一") {
+			t.Fatalf("command %v: mode-conflict message lost 恰选其一: %v", args, err)
+		}
+	}
 }
 
 func TestSearchServerReturnsEnvelopes(t *testing.T) {
