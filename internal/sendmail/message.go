@@ -5,22 +5,30 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"html"
 	"mime"
 	"mime/multipart"
 	"mime/quotedprintable"
 	"net/mail"
 	"net/textproto"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/situker/qqmail-cli/internal/output"
 	"github.com/situker/qqmail-cli/internal/safeio"
 )
 
 const (
 	MaxTotalAttachmentBytes int64 = 20 << 20
 	MaxRecipientsPerMessage       = 10
+	MaxBodyBytes                  = 1 << 20
+
+	// maxHTMLSourceExcerptBytes caps the escaped HTML source excerpt carried
+	// in the dry-run summary so the preview stays bounded for any body size.
+	maxHTMLSourceExcerptBytes = 2048
 )
 
 type Attachment struct {
@@ -36,6 +44,7 @@ type Draft struct {
 	Bcc         []mail.Address
 	Subject     string
 	Body        string
+	BodyFormat  string
 	Attachments []Attachment
 	InReplyTo   string
 	References  []string
@@ -49,16 +58,19 @@ type AttachmentSummary struct {
 }
 
 type Summary struct {
-	From             string              `json:"from"`
-	To               []string            `json:"to"`
-	Cc               []string            `json:"cc"`
-	Bcc              []string            `json:"bcc"`
-	Subject          string              `json:"subject"`
-	BodySummary      string              `json:"body_summary"`
-	Attachments      []AttachmentSummary `json:"attachments"`
-	RecipientCount   int                 `json:"recipient_count"`
-	AllowlistReady   bool                `json:"allowlist_ready"`
-	DeniedRecipients []string            `json:"denied_recipients"`
+	From              string              `json:"from"`
+	To                []string            `json:"to"`
+	Cc                []string            `json:"cc"`
+	Bcc               []string            `json:"bcc"`
+	Subject           string              `json:"subject"`
+	BodySummary       string              `json:"body_summary"`
+	BodyPreview       string              `json:"body_preview,omitempty"`
+	HTMLSourceExcerpt string              `json:"html_source_excerpt,omitempty"`
+	HTMLBytes         int                 `json:"html_bytes,omitempty"`
+	Attachments       []AttachmentSummary `json:"attachments"`
+	RecipientCount    int                 `json:"recipient_count"`
+	AllowlistReady    bool                `json:"allowlist_ready"`
+	DeniedRecipients  []string            `json:"denied_recipients"`
 }
 
 func Build(draft Draft) ([]byte, error) {
@@ -98,7 +110,7 @@ func Build(draft Draft) ([]byte, error) {
 		}
 	}
 	var output bytes.Buffer
-	if len(draft.Attachments) == 0 {
+	if len(draft.Attachments) == 0 && draft.BodyFormat != "html" {
 		headers = append(headers, header{"Content-Type", `text/plain; charset="UTF-8"`}, header{"Content-Transfer-Encoding", "quoted-printable"})
 		writeHeaders(&output, headers)
 		writer := quotedprintable.NewWriter(&output)
@@ -108,20 +120,56 @@ func Build(draft Draft) ([]byte, error) {
 		}
 		return output.Bytes(), nil
 	}
+	if len(draft.Attachments) == 0 {
+		// HTML body without attachments: the alternative pair is the whole
+		// message body.
+		multipartWriter := multipart.NewWriter(&output)
+		headers = append(headers, header{"Content-Type", fmt.Sprintf(`multipart/alternative; boundary="%s"`, multipartWriter.Boundary())})
+		writeHeaders(&output, headers)
+		if err := writeAlternativeBody(multipartWriter, draft.Body); err != nil {
+			return nil, err
+		}
+		if err := multipartWriter.Close(); err != nil {
+			return nil, err
+		}
+		return output.Bytes(), nil
+	}
 	multipartWriter := multipart.NewWriter(&output)
 	headers = append(headers, header{"Content-Type", fmt.Sprintf(`multipart/mixed; boundary="%s"`, multipartWriter.Boundary())})
 	writeHeaders(&output, headers)
-	textHeader := textproto.MIMEHeader{}
-	textHeader.Set("Content-Type", `text/plain; charset="UTF-8"`)
-	textHeader.Set("Content-Transfer-Encoding", "quoted-printable")
-	part, err := multipartWriter.CreatePart(textHeader)
-	if err != nil {
-		return nil, err
-	}
-	quoted := quotedprintable.NewWriter(part)
-	_, _ = quoted.Write([]byte(normalizeCRLF(draft.Body)))
-	if err := quoted.Close(); err != nil {
-		return nil, err
+	if draft.BodyFormat == "html" {
+		// The alternative (text+html) pair replaces the bare text part;
+		// the attachment loop below is unchanged.
+		var alternative bytes.Buffer
+		alternativeWriter := multipart.NewWriter(&alternative)
+		if err := writeAlternativeBody(alternativeWriter, draft.Body); err != nil {
+			return nil, err
+		}
+		if err := alternativeWriter.Close(); err != nil {
+			return nil, err
+		}
+		textHeader := textproto.MIMEHeader{}
+		textHeader.Set("Content-Type", fmt.Sprintf(`multipart/alternative; boundary="%s"`, alternativeWriter.Boundary()))
+		part, err := multipartWriter.CreatePart(textHeader)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := part.Write(alternative.Bytes()); err != nil {
+			return nil, err
+		}
+	} else {
+		textHeader := textproto.MIMEHeader{}
+		textHeader.Set("Content-Type", `text/plain; charset="UTF-8"`)
+		textHeader.Set("Content-Transfer-Encoding", "quoted-printable")
+		part, err := multipartWriter.CreatePart(textHeader)
+		if err != nil {
+			return nil, err
+		}
+		quoted := quotedprintable.NewWriter(part)
+		_, _ = quoted.Write([]byte(normalizeCRLF(draft.Body)))
+		if err := quoted.Close(); err != nil {
+			return nil, err
+		}
 	}
 	for i, attachment := range draft.Attachments {
 		filename := safeio.SanitizeFilename(attachment.Filename, fmt.Sprintf("attachment-%d", i+1))
@@ -153,14 +201,90 @@ func Build(draft Draft) ([]byte, error) {
 	return output.Bytes(), nil
 }
 
+// DerivePlainText renders a deterministic plain-text fallback for an HTML
+// body: block tags become newlines, script/style blocks are dropped, tags
+// are stripped, entities decoded, whitespace collapsed. It is what the
+// recipient's text-mode client will roughly see and what the human confirms.
+func DerivePlainText(source string) string {
+	// Go's RE2 regexp has no backreferences, so the brief's single
+	// `<(script|style)\b.*?</\1>` pattern becomes two literal-tag patterns
+	// with identical (?is) semantics.
+	s := regexp.MustCompile(`(?is)<script\b.*?</script\s*>`).ReplaceAllString(source, "")
+	s = regexp.MustCompile(`(?is)<style\b.*?</style\s*>`).ReplaceAllString(s, "")
+	s = regexp.MustCompile(`(?i)<(br|/p|/div|/li|/tr|/h[1-6])\b[^>]*>`).ReplaceAllString(s, "\n")
+	s = regexp.MustCompile(`(?s)<[^>]*>`).ReplaceAllString(s, "")
+	s = html.UnescapeString(s)
+	s = strings.Join(strings.Fields(s), " ")
+	lines := strings.Split(s, "\n")
+	for i := range lines {
+		lines[i] = strings.TrimSpace(lines[i])
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+// writeAlternativeBody renders an HTML draft body as a multipart/alternative
+// pair into w: a derived plain-text part (what text-mode clients roughly see)
+// followed by the verbatim HTML part. The HTML is intentionally sent without
+// any sanitization — the CLI is a transport, not a rewriter; the dry-run
+// preview's escaped source excerpt is what the human reviews instead.
+func writeAlternativeBody(w *multipart.Writer, body string) error {
+	textHeader := textproto.MIMEHeader{}
+	textHeader.Set("Content-Type", `text/plain; charset="UTF-8"`)
+	textHeader.Set("Content-Transfer-Encoding", "quoted-printable")
+	textPart, err := w.CreatePart(textHeader)
+	if err != nil {
+		return err
+	}
+	quoted := quotedprintable.NewWriter(textPart)
+	_, _ = quoted.Write([]byte(normalizeCRLF(DerivePlainText(body))))
+	if err := quoted.Close(); err != nil {
+		return err
+	}
+	htmlHeader := textproto.MIMEHeader{}
+	htmlHeader.Set("Content-Type", `text/html; charset="UTF-8"`)
+	htmlHeader.Set("Content-Transfer-Encoding", "quoted-printable")
+	htmlPart, err := w.CreatePart(htmlHeader)
+	if err != nil {
+		return err
+	}
+	quoted = quotedprintable.NewWriter(htmlPart)
+	_, _ = quoted.Write([]byte(normalizeCRLF(body)))
+	return quoted.Close()
+}
+
 func Summarize(draft Draft, allowlist []string) Summary {
 	denied := DeniedRecipients(draft, allowlist)
 	summary := Summary{From: draft.From.String(), To: addressStrings(draft.To), Cc: addressStrings(draft.Cc), Bcc: addressStrings(draft.Bcc), Subject: draft.Subject, BodySummary: truncateRunes(strings.TrimSpace(draft.Body), 240), Attachments: []AttachmentSummary{}, RecipientCount: len(draft.To) + len(draft.Cc) + len(draft.Bcc), AllowlistReady: len(allowlist) > 0 && len(denied) == 0, DeniedRecipients: denied}
+	if draft.BodyFormat == "html" {
+		summary.BodyPreview = DerivePlainText(draft.Body)
+		summary.HTMLSourceExcerpt = htmlSourceExcerpt(draft.Body)
+		summary.HTMLBytes = len(draft.Body)
+	}
 	for i, attachment := range draft.Attachments {
 		filename := safeio.SanitizeFilename(attachment.Filename, fmt.Sprintf("attachment-%d", i+1))
 		summary.Attachments = append(summary.Attachments, AttachmentSummary{Filename: filename, ContentType: attachment.ContentType, SizeBytes: len(attachment.Data)})
 	}
 	return summary
+}
+
+// htmlSourceExcerpt prepares the dry-run HTML review block: the raw source is
+// escaped with the output package's markdown escaper (which also strips
+// terminal controls and flattens line breaks) and capped at
+// maxHTMLSourceExcerptBytes. HTMLBytes reports the full body size.
+func htmlSourceExcerpt(body string) string {
+	escaped := output.SanitizeMarkdown(body)
+	if len(escaped) <= maxHTMLSourceExcerptBytes {
+		return escaped
+	}
+	truncated := escaped[:maxHTMLSourceExcerptBytes]
+	// Back off to a rune boundary so the cap never splits a character.
+	for len(truncated) > 0 {
+		if r, size := utf8.DecodeLastRuneInString(truncated); r != utf8.RuneError || size > 1 {
+			break
+		}
+		truncated = truncated[:len(truncated)-1]
+	}
+	return truncated
 }
 
 func DeniedRecipients(draft Draft, allowlist []string) []string {
@@ -189,6 +313,14 @@ func validateDraft(draft Draft) error {
 	}
 	if len(draft.To)+len(draft.Cc)+len(draft.Bcc) > MaxRecipientsPerMessage {
 		return fmt.Errorf("recipient count exceeds %d", MaxRecipientsPerMessage)
+	}
+	switch draft.BodyFormat {
+	case "", "text", "html":
+	default:
+		return fmt.Errorf("unsupported body format %q", draft.BodyFormat)
+	}
+	if len(draft.Body) > MaxBodyBytes {
+		return fmt.Errorf("body exceeds %d bytes", MaxBodyBytes)
 	}
 	for _, value := range []string{draft.Subject, draft.InReplyTo, strings.Join(draft.References, " "), draft.From.Name, draft.From.Address} {
 		if strings.ContainsAny(value, "\r\n") {

@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"github.com/situker/qqmail-cli/internal/imapx"
 	"github.com/situker/qqmail-cli/internal/index"
 	"github.com/situker/qqmail-cli/internal/mailmodel"
+	"github.com/situker/qqmail-cli/internal/output"
 	"github.com/situker/qqmail-cli/internal/secrets"
 	"github.com/situker/qqmail-cli/internal/sendmail"
 )
@@ -262,5 +264,140 @@ func TestReplyRejectsToFlagInsteadOfSilentlyIgnoring(t *testing.T) {
 	err := root.Execute()
 	if err == nil || errmap.Classify(err).Kind != errmap.Usage || called {
 		t.Fatalf("reply must reject --to with a usage error before any transport: err=%v called=%v", err, called)
+	}
+}
+
+// The human dry-run preview for an HTML body must show the derived plain-text
+// fallback and the escaped, truncated source excerpt plus the fixed warning —
+// never the raw HTML source, and never an unescaped control character.
+func TestSendDryRunHTMLPreviewShowsDerivedTextEscapedSourceAndWarning(t *testing.T) {
+	t.Setenv("QQMAIL_CLI_READONLY", "0")
+	configPath := saveSendConfig(t, []string{"reader@example.com"})
+	var out, stderr bytes.Buffer
+	rt := &Runtime{Out: &out, Err: &stderr, In: strings.NewReader(""), Secrets: &secrets.Memory{}}
+	root := NewRoot(rt)
+	body := "<p>你好 <b>世界</b></p><script>alert('x')</script>\x1b[31mred\x1b[0m\x00" + strings.Repeat("A", 2500)
+	root.SetArgs([]string{"--config", configPath, "send", "--to", "reader@example.com", "--subject", "fixture", "--body", body, "--body-format", "html"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	human := out.String() + stderr.String()
+	for _, want := range []string{
+		"你好 世界",
+		"HTML 正文将原样发送，未经消毒；请检查上方源码摘要",
+		"&#60;script&#62;",
+	} {
+		if !strings.Contains(human, want) {
+			t.Fatalf("dry-run preview missing %q\noutput:\n%s", want, human)
+		}
+	}
+	for _, bad := range []string{"\x1b", "\x00", "<script>"} {
+		if strings.Contains(human, bad) {
+			t.Fatalf("dry-run preview leaks unescaped %q\noutput:\n%s", bad, human)
+		}
+	}
+}
+
+// The JSON summary must carry the three HTML preview fields (only added, never
+// removed) and stay valid against send.schema.json.
+func TestSendDryRunJSONHTMLSummaryFields(t *testing.T) {
+	t.Setenv("QQMAIL_CLI_READONLY", "0")
+	configPath := saveSendConfig(t, []string{"reader@example.com"})
+	var out, stderr bytes.Buffer
+	rt := &Runtime{Build: BuildInfo{Version: "test"}, Out: &out, Err: &stderr, In: strings.NewReader(""), JSON: true, Secrets: &secrets.Memory{}}
+	root := NewRoot(rt)
+	body := "<p>你好 <b>世界</b></p>" + strings.Repeat("甲", 3000)
+	root.SetArgs([]string{"--config", configPath, "--json", "send", "--to", "reader@example.com", "--subject", "fixture", "--body", body, "--body-format", "html"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	validateOutput(t, "send.schema.json", out.Bytes())
+	var envelope struct {
+		Data struct {
+			Summary struct {
+				BodyPreview       string `json:"body_preview"`
+				HTMLSourceExcerpt string `json:"html_source_excerpt"`
+				HTMLBytes         int    `json:"html_bytes"`
+			} `json:"summary"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	summary := envelope.Data.Summary
+	if !strings.HasPrefix(summary.BodyPreview, "你好 世界") {
+		t.Fatalf("body_preview = %q, want the derived plain text", summary.BodyPreview)
+	}
+	if summary.HTMLBytes != len(body) {
+		t.Fatalf("html_bytes = %d, want %d", summary.HTMLBytes, len(body))
+	}
+	if summary.HTMLSourceExcerpt == "" || len(summary.HTMLSourceExcerpt) > 2048 {
+		t.Fatalf("html_source_excerpt length = %d, want 1..2048", len(summary.HTMLSourceExcerpt))
+	}
+	if !strings.Contains(summary.HTMLSourceExcerpt, "&#60;b&#62;") {
+		t.Fatalf("html_source_excerpt is not escaped: %q", summary.HTMLSourceExcerpt)
+	}
+}
+
+// An unknown --body-format value is a usage error (exit 2), before anything is
+// built or sent.
+func TestSendRejectsUnknownBodyFormatWithUsageExitCode(t *testing.T) {
+	t.Setenv("QQMAIL_CLI_READONLY", "0")
+	configPath := saveSendConfig(t, []string{"reader@example.com"})
+	rt := &Runtime{Out: &bytes.Buffer{}, Err: &bytes.Buffer{}, In: strings.NewReader(""), Secrets: &secrets.Memory{}}
+	root := NewRoot(rt)
+	root.SetArgs([]string{"--config", configPath, "send", "--to", "reader@example.com", "--subject", "fixture", "--body", "hi", "--body-format", "rich"})
+	err := root.Execute()
+	// The rejection must name the offending value (as the Build-side whitelist
+	// error does), not just any generic usage failure.
+	if err == nil || errmap.Classify(err).Kind != errmap.Usage || !strings.Contains(err.Error(), "rich") {
+		t.Fatalf("invalid --body-format must be a usage error (exit %d) naming the value, got %v", output.ExitUsage, err)
+	}
+}
+
+// reply and forward share the --body-format flag and must carry the value into
+// the Draft they hand to the transport.
+func TestReplyAndForwardCarryBodyFormat(t *testing.T) {
+	t.Setenv("QQMAIL_CLI_READONLY", "0")
+	id := "m1_eyJmIjoiSU5CT1giLCJ2IjoxLCJ1IjoxfQ"
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"reply", []string{"reply", id, "--body", "thanks", "--body-format", "html", "--execute"}},
+		{"forward", []string{"forward", id, "--to", "reader@example.com", "--body", "FYI", "--body-format", "html", "--execute"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			configPath := saveSendConfig(t, []string{"sender@example.com", "reader@example.com"})
+			called := false
+			rt := &Runtime{
+				Out: &bytes.Buffer{}, Err: &bytes.Buffer{}, In: strings.NewReader("SEND\n"),
+				Secrets:    &secrets.Memory{Values: map[string]string{"user@qq.com": testAuthCode}},
+				IsTerminal: func(io.Reader) bool { return true },
+				Dial:       func(context.Context, account.Named, string) (imapx.Reader, error) { return fakeReader{}, nil },
+				SendMail: func(_ context.Context, _ account.Named, _ string, draft sendmail.Draft, _ []byte) error {
+					called = true
+					if draft.BodyFormat != "html" {
+						t.Fatalf("%s dropped --body-format: got %q", tc.name, draft.BodyFormat)
+					}
+					raw, err := sendmail.Build(draft)
+					if err != nil {
+						t.Fatalf("draft with html format does not build: %v", err)
+					}
+					if !bytes.Contains(raw, []byte("multipart/alternative")) {
+						t.Fatalf("raw message has no multipart/alternative: %s", raw)
+					}
+					return nil
+				},
+			}
+			root := NewRoot(rt)
+			root.SetArgs(append([]string{"--config", configPath}, tc.args...))
+			if err := root.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			if !called {
+				t.Fatal("transport was not called")
+			}
+		})
 	}
 }

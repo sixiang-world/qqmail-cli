@@ -32,6 +32,7 @@ type composeOptions struct {
 	Subject     string
 	Body        string
 	BodyFile    string
+	BodyFormat  string
 	Attachments []string
 	Execute     bool
 }
@@ -145,7 +146,7 @@ func newReplyCommand(rt *Runtime) *cobra.Command {
 			body += "\n\n"
 		}
 		body += quoted
-		draft := sendmail.Draft{From: mail.Address{Address: named.Email}, To: to, Cc: cc, Bcc: bcc, Subject: subject, Body: body, Attachments: attachments, InReplyTo: original.Parsed.MessageID, References: original.References}
+		draft := sendmail.Draft{From: mail.Address{Address: named.Email}, To: to, Cc: cc, Bcc: bcc, Subject: subject, Body: body, BodyFormat: opts.BodyFormat, Attachments: attachments, InReplyTo: original.Parsed.MessageID, References: original.References}
 		return runDraft(rt, cmd, named, draft, opts.Execute)
 	}
 	return cmd
@@ -207,7 +208,7 @@ func newForwardCommand(rt *Runtime) *cobra.Command {
 			body += "\n\n"
 		}
 		body += forwardOriginal(original.Parsed)
-		draft := sendmail.Draft{From: mail.Address{Address: named.Email}, To: to, Cc: cc, Bcc: bcc, Subject: subject, Body: body, Attachments: attachments, References: original.References}
+		draft := sendmail.Draft{From: mail.Address{Address: named.Email}, To: to, Cc: cc, Bcc: bcc, Subject: subject, Body: body, BodyFormat: opts.BodyFormat, Attachments: attachments, References: original.References}
 		return runDraft(rt, cmd, named, draft, opts.Execute)
 	}
 	return cmd
@@ -220,6 +221,7 @@ func addComposeFlags(cmd *cobra.Command, opts *composeOptions, requireTo, requir
 	cmd.Flags().StringVar(&opts.Subject, "subject", "", "message subject")
 	cmd.Flags().StringVar(&opts.Body, "body", "", "plain-text body")
 	cmd.Flags().StringVar(&opts.BodyFile, "body-file", "", "read plain-text body from a file (maximum 1 MiB)")
+	cmd.Flags().StringVar(&opts.BodyFormat, "body-format", "", "body format: text (default) or html; html is sent verbatim as the text/html part of a multipart/alternative and is never sanitized")
 	cmd.Flags().StringSliceVar(&opts.Attachments, "attach", nil, "attachment paths (20 MiB combined maximum)")
 	cmd.Flags().BoolVar(&opts.Execute, "execute", false, "send after allowlist validation and TTY confirmation")
 	if requireTo {
@@ -256,7 +258,7 @@ func draftFromOptions(named account.Named, opts composeOptions) (sendmail.Draft,
 	if err != nil {
 		return sendmail.Draft{}, err
 	}
-	return sendmail.Draft{From: mail.Address{Address: named.Email}, To: to, Cc: cc, Bcc: bcc, Subject: opts.Subject, Body: body, Attachments: attachments}, nil
+	return sendmail.Draft{From: mail.Address{Address: named.Email}, To: to, Cc: cc, Bcc: bcc, Subject: opts.Subject, Body: body, BodyFormat: opts.BodyFormat, Attachments: attachments}, nil
 }
 
 func runDraft(rt *Runtime, cmd *cobra.Command, named account.Named, draft sendmail.Draft, execute bool) error {
@@ -310,8 +312,19 @@ func runDraft(rt *Runtime, cmd *cobra.Command, named account.Named, draft sendma
 }
 
 func printDraftSummary(w io.Writer, summary sendmail.Summary) {
+	bodyLine := summary.BodySummary
+	if summary.HTMLBytes > 0 {
+		// For HTML bodies the raw source is never printed as such; the human
+		// reviews the derived plain-text fallback plus the escaped source
+		// excerpt below, and the fixed warning line.
+		bodyLine = summary.BodyPreview
+	}
 	_, _ = fmt.Fprintf(w, "From: %s\nTo: %s\nCc: %s\nBcc: %s\nSubject: %s\nBody: %s\n",
-		output.SanitizeHuman(summary.From), output.SanitizeHuman(strings.Join(summary.To, ", ")), output.SanitizeHuman(strings.Join(summary.Cc, ", ")), output.SanitizeHuman(strings.Join(summary.Bcc, ", ")), output.SanitizeHuman(summary.Subject), output.SanitizeHuman(summary.BodySummary))
+		output.SanitizeHuman(summary.From), output.SanitizeHuman(strings.Join(summary.To, ", ")), output.SanitizeHuman(strings.Join(summary.Cc, ", ")), output.SanitizeHuman(strings.Join(summary.Bcc, ", ")), output.SanitizeHuman(summary.Subject), output.SanitizeHuman(bodyLine))
+	if summary.HTMLBytes > 0 {
+		_, _ = fmt.Fprintf(w, "HTML source excerpt (body: %d bytes): %s\n", summary.HTMLBytes, output.SanitizeHuman(summary.HTMLSourceExcerpt))
+		_, _ = fmt.Fprintln(w, "HTML 正文将原样发送，未经消毒；请检查上方源码摘要")
+	}
 	for _, attachment := range summary.Attachments {
 		_, _ = fmt.Fprintf(w, "Attachment: %s (%s, %d bytes)\n", output.SanitizeHuman(attachment.Filename), attachment.ContentType, attachment.SizeBytes)
 	}
