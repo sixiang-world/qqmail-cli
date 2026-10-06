@@ -30,11 +30,14 @@ const (
 type SearchFilter struct {
 	Unread    bool
 	From      string
+	To        string
 	Subject   string
 	Since     time.Time
+	Before    time.Time
 	BeforeUID uint32
 	AfterUID  uint32
 	Limit     int
+	Text      string // 仅供 F1 服务端搜索使用；envelope list 不设置
 }
 
 // Reader is deliberately read-only. Its method whitelist is tested so server
@@ -222,14 +225,23 @@ func (c *Client) Examine(ctx context.Context, folder string) (uint32, uint32, er
 
 func (c *Client) Search(ctx context.Context, filter SearchFilter) ([]uint32, error) {
 	criteria := &imap.SearchCriteria{Since: filter.Since}
+	if !filter.Before.IsZero() {
+		criteria.Before = filter.Before
+	}
 	if filter.Unread {
 		criteria.NotFlag = []imap.Flag{imap.FlagSeen}
 	}
 	if filter.From != "" {
 		criteria.Header = append(criteria.Header, imap.SearchCriteriaHeaderField{Key: "From", Value: filter.From})
 	}
+	if filter.To != "" {
+		criteria.Header = append(criteria.Header, imap.SearchCriteriaHeaderField{Key: "To", Value: filter.To})
+	}
 	if filter.Subject != "" {
 		criteria.Header = append(criteria.Header, imap.SearchCriteriaHeaderField{Key: "Subject", Value: filter.Subject})
+	}
+	if filter.Text != "" {
+		criteria.Text = append(criteria.Text, filter.Text)
 	}
 	if filter.AfterUID > 0 || filter.BeforeUID > 1 {
 		start, stop := imap.UID(1), imap.UID(0)

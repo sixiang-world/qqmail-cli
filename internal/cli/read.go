@@ -52,8 +52,10 @@ func newFolderCommand(rt *Runtime) *cobra.Command {
 type envelopeOptions struct {
 	Unread    bool
 	From      string
+	To        string
 	Subject   string
 	Since     string
+	Before    string
 	Limit     int
 	BeforeUID uint32
 }
@@ -64,15 +66,21 @@ func newEnvelopeCommand(rt *Runtime) *cobra.Command {
 	cmd := &cobra.Command{Use: "list", Short: "List message envelopes using UID pagination", Args: cobra.NoArgs}
 	cmd.Flags().BoolVar(&opts.Unread, "unread", false, "only unread messages")
 	cmd.Flags().StringVar(&opts.From, "from", "", "case-insensitive sender substring")
+	cmd.Flags().StringVar(&opts.To, "to", "", "case-insensitive recipient substring")
 	cmd.Flags().StringVar(&opts.Subject, "subject", "", "case-insensitive subject substring")
 	cmd.Flags().StringVar(&opts.Since, "since", "", "time window (24h, 7d) or YYYY-MM-DD")
+	cmd.Flags().StringVar(&opts.Before, "before", "", "upper time bound (24h, 7d) or YYYY-MM-DD")
 	cmd.Flags().IntVar(&opts.Limit, "limit", 20, "maximum messages (1-500)")
 	cmd.Flags().Uint32Var(&opts.BeforeUID, "before-uid", 0, "return UIDs lower than this cursor")
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		if opts.Limit < 1 || opts.Limit > 500 {
 			return &errmap.Error{Kind: errmap.Usage, Message: "--limit 必须在 1 到 500 之间"}
 		}
-		since, err := parseSince(opts.Since, time.Now())
+		since, err := parseSince("--since", opts.Since, time.Now())
+		if err != nil {
+			return err
+		}
+		before, err := parseSince("--before", opts.Before, time.Now())
 		if err != nil {
 			return err
 		}
@@ -83,7 +91,7 @@ func newEnvelopeCommand(rt *Runtime) *cobra.Command {
 			return err
 		}
 		defer func() { _ = reader.Logout(context.Background()) }()
-		filter := imapx.SearchFilter{Unread: opts.Unread, From: opts.From, Subject: opts.Subject, Since: since, BeforeUID: opts.BeforeUID, Limit: opts.Limit}
+		filter := imapx.SearchFilter{Unread: opts.Unread, From: opts.From, To: opts.To, Subject: opts.Subject, Since: since, Before: before, BeforeUID: opts.BeforeUID, Limit: opts.Limit}
 		envelopes, windowMin, mode, err := listEnvelopes(ctx, reader, rt.Folder, filter)
 		if err != nil {
 			return err
@@ -94,7 +102,14 @@ func newEnvelopeCommand(rt *Runtime) *cobra.Command {
 		next := windowMin
 		data := map[string]any{"envelopes": envelopes, "page": map[string]any{"next_before_uid": next}}
 		if rt.JSON {
-			return writeDetailed(rt, cmd, data, nil, output.Meta{Account: named.Name, SearchMode: mode})
+			var filtersApplied []string
+			if opts.Before != "" {
+				filtersApplied = append(filtersApplied, "before")
+			}
+			if opts.To != "" {
+				filtersApplied = append(filtersApplied, "to")
+			}
+			return writeDetailed(rt, cmd, data, nil, output.Meta{Account: named.Name, SearchMode: mode, FiltersApplied: filtersApplied})
 		}
 		for _, envelope := range envelopes {
 			from := ""
@@ -131,7 +146,10 @@ func listEnvelopes(ctx context.Context, reader imapx.Reader, folder string, filt
 		ids, err = reader.Search(ctx, searchFilter)
 	}
 	if err != nil {
-		return nil, 0, mode, err
+		// A tagged NO/BAD on SEARCH is the server refusing our criteria, not a
+		// transient fault: report it as a policy denial so the agent adjusts
+		// the filter instead of retrying (docs/compat/qq-20261006.md).
+		return nil, 0, mode, imapx.WrapSearchReject(err)
 	}
 	windowMin := uint32(0)
 	for _, id := range ids {
@@ -148,7 +166,7 @@ func listEnvelopes(ctx context.Context, reader imapx.Reader, folder string, filt
 		if !filter.Since.IsZero() && item.InternalDate.Before(filter.Since) {
 			continue
 		}
-		if !containsFold(item.Subject, filter.Subject) || !addressesContain(item.From, filter.From) {
+		if !containsFold(item.Subject, filter.Subject) || !addressesContain(item.From, filter.From) || !addressesContain(item.To, filter.To) {
 			continue
 		}
 		result = append(result, item)
@@ -387,27 +405,30 @@ func bodyText(value any) string {
 	return fmt.Sprint(value)
 }
 
-func parseSince(value string, now time.Time) (time.Time, error) {
+// parseSince accepts a relative window (24h, 7d) or an absolute YYYY-MM-DD
+// date. The flag name parameterizes the usage errors so the single
+// implementation serves --since and --before without duplicated parsing.
+func parseSince(flag string, value string, now time.Time) (time.Time, error) {
 	if value == "" {
 		return time.Time{}, nil
 	}
 	if strings.HasSuffix(value, "d") {
 		days, err := strconv.Atoi(strings.TrimSuffix(value, "d"))
 		if err != nil || days < 0 {
-			return time.Time{}, &errmap.Error{Kind: errmap.Usage, Message: "--since 天数格式无效（示例：7d）"}
+			return time.Time{}, &errmap.Error{Kind: errmap.Usage, Message: fmt.Sprintf("%s 天数格式无效（示例：7d）", flag)}
 		}
 		return now.Add(-time.Duration(days) * 24 * time.Hour), nil
 	}
 	if strings.HasSuffix(value, "h") {
 		hours, err := strconv.Atoi(strings.TrimSuffix(value, "h"))
 		if err != nil || hours < 0 {
-			return time.Time{}, &errmap.Error{Kind: errmap.Usage, Message: "--since 小时格式无效（示例：24h）"}
+			return time.Time{}, &errmap.Error{Kind: errmap.Usage, Message: fmt.Sprintf("%s 小时格式无效（示例：24h）", flag)}
 		}
 		return now.Add(-time.Duration(hours) * time.Hour), nil
 	}
 	parsed, err := time.ParseInLocation("2006-01-02", value, time.Local)
 	if err != nil {
-		return time.Time{}, &errmap.Error{Kind: errmap.Usage, Message: "--since 只接受 24h、7d 或 YYYY-MM-DD"}
+		return time.Time{}, &errmap.Error{Kind: errmap.Usage, Message: fmt.Sprintf("%s 只接受 24h、7d 或 YYYY-MM-DD", flag)}
 	}
 	return parsed, nil
 }

@@ -24,12 +24,13 @@ type Warning struct {
 }
 
 type Meta struct {
-	Account    string `json:"account,omitempty"`
-	DurationMS int64  `json:"duration_ms"`
-	Truncated  bool   `json:"truncated"`
-	Parser     string `json:"parser,omitempty"`
-	SearchMode string `json:"search_mode,omitempty"`
-	Skipped    int    `json:"skipped,omitempty"`
+	Account        string   `json:"account,omitempty"`
+	DurationMS     int64    `json:"duration_ms"`
+	Truncated      bool     `json:"truncated"`
+	Parser         string   `json:"parser,omitempty"`
+	SearchMode     string   `json:"search_mode,omitempty"`
+	Skipped        int      `json:"skipped,omitempty"`
+	FiltersApplied []string `json:"filters_applied,omitempty"`
 }
 
 type Envelope struct {

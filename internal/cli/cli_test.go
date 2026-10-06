@@ -136,11 +136,11 @@ func TestAuthLoginNeverWritesSecretToConfig(t *testing.T) {
 
 func TestParseSince(t *testing.T) {
 	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.Local)
-	got, err := parseSince("7d", now)
+	got, err := parseSince("--since", "7d", now)
 	if err != nil || !got.Equal(now.Add(-7*24*time.Hour)) {
 		t.Fatalf("7d: %v, %v", got, err)
 	}
-	got, err = parseSince("2026-08-01", now)
+	got, err = parseSince("--since", "2026-08-01", now)
 	if err != nil || got.Day() != 1 || got.Month() != time.August {
 		t.Fatalf("date: %v, %v", got, err)
 	}

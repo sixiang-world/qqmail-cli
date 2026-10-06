@@ -89,7 +89,7 @@ func newExportCommand(rt *Runtime) *cobra.Command {
 		}
 		defer func() { _ = reader.Logout(context.Background()) }()
 		if all || since != "" {
-			sinceTime, err := parseSince(since, time.Now())
+			sinceTime, err := parseSince("--since", since, time.Now())
 			if err != nil {
 				return err
 			}

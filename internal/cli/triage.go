@@ -45,7 +45,7 @@ func (f *triageScopeFlags) options(rt *Runtime, now time.Time) (triage.Options, 
 	}
 	var olderThan time.Time
 	if trimmed := strings.TrimSpace(f.minAge); trimmed != "" && trimmed != "0" {
-		parsed, err := parseSince(trimmed, now)
+		parsed, err := parseSince("--min-age", trimmed, now)
 		if err != nil {
 			return triage.Options{}, &errmap.Error{Kind: errmap.Usage, Message: "--min-age 只接受 24h、30d、YYYY-MM-DD 或 0", Cause: err}
 		}
