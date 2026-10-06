@@ -1,10 +1,12 @@
 package imapx
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
+	"strings"
 	"testing"
 
 	imap "github.com/emersion/go-imap/v2"
@@ -33,6 +35,22 @@ func TestWrapSearchRejectMapsOnlyCompletedServerRejections(t *testing.T) {
 			got := WrapSearchReject(tc.cause)
 			if kind := errmap.Classify(got).Kind; kind != tc.want {
 				t.Fatalf("WrapSearchReject(%v) classified as %s, want %s", tc.cause, kind, tc.want)
+			}
+			if tc.want != errmap.PolicyDenied {
+				return
+			}
+			// The mapped rejection must keep pointing at the dialect record and
+			// the local-search fallback: wording drift here strands the user
+			// without the documented degradation path.
+			var mapped *errmap.Error
+			if !errors.As(got, &mapped) {
+				t.Fatalf("WrapSearchReject(%v) = %T, want *errmap.Error", tc.cause, got)
+			}
+			if !strings.Contains(mapped.Message, "docs/compat/") {
+				t.Fatalf("rejection message lost the docs/compat/ reference: %q", mapped.Message)
+			}
+			if !strings.Contains(mapped.Suggestion, "search --local") {
+				t.Fatalf("rejection suggestion lost the search --local fallback: %q", mapped.Suggestion)
 			}
 		})
 	}
