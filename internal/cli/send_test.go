@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"os"
@@ -226,6 +227,47 @@ func TestForwardCarriesInlineImages(t *testing.T) {
 	}
 	if !called {
 		t.Fatal("transport was not called")
+	}
+}
+
+// originalAttachmentMailReader serves a mail carrying a single 1 KiB
+// attachment, so a forward that also --attaches a file just under the 20 MiB
+// cap crosses the combined limit only once the original attachments are
+// appended.
+type originalAttachmentMailReader struct{ fakeReader }
+
+func (originalAttachmentMailReader) FetchBodyPeek(context.Context, mailmodel.MsgID, int64) ([]byte, bool, error) {
+	return []byte("From: sender@example.com\r\n" +
+		"Subject: fixture\r\n" +
+		"Message-ID: <fixture@example.com>\r\n" +
+		"MIME-Version: 1.0\r\n" +
+		"Content-Type: multipart/mixed; boundary=\"m1\"\r\n\r\n" +
+		"--m1\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nbody\r\n" +
+		"--m1\r\nContent-Type: application/octet-stream; name=\"orig.bin\"\r\nContent-Disposition: attachment; filename=\"orig.bin\"\r\nContent-Transfer-Encoding: base64\r\n\r\n" +
+		base64.StdEncoding.EncodeToString(make([]byte, 1024)) + "\r\n" +
+		"--m1--\r\n"), false, nil
+}
+
+// Forward must fail the combined 20 MiB attachment cap with the loader's
+// policy denial (exit 50), not validateDraft's generic build failure (exit 2):
+// the original mail's attachments share the cap with --attach/--attach-inline.
+func TestForwardCombinedAttachmentsOverCapIsPolicyDenied(t *testing.T) {
+	t.Setenv("QQMAIL_CLI_READONLY", "0")
+	configPath := saveSendConfig(t, []string{"reader@example.com"})
+	bigFile := filepath.Join(t.TempDir(), "big.bin")
+	if err := os.WriteFile(bigFile, make([]byte, int(sendmail.MaxTotalAttachmentBytes)-512), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rt := &Runtime{
+		Out: &bytes.Buffer{}, Err: &bytes.Buffer{}, In: strings.NewReader(""),
+		Secrets: &secrets.Memory{Values: map[string]string{"user@qq.com": testAuthCode}},
+		Dial:    func(context.Context, account.Named, string) (imapx.Reader, error) { return originalAttachmentMailReader{}, nil },
+	}
+	root := NewRoot(rt)
+	root.SetArgs([]string{"--config", configPath, "forward", "m1_eyJmIjoiSU5CT1giLCJ2IjoxLCJ1IjoxfQ", "--to", "reader@example.com", "--body", "FYI", "--attach", bigFile})
+	err := root.Execute()
+	if err == nil || errmap.Classify(err).Kind != errmap.PolicyDenied || !strings.Contains(err.Error(), "20 MiB") {
+		t.Fatalf("forward over the combined cap must be policy_denied naming the cap, got %v", err)
 	}
 }
 

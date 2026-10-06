@@ -216,6 +216,13 @@ func newForwardCommand(rt *Runtime) *cobra.Command {
 		for _, attachment := range original.Parsed.Attachments {
 			attachments = append(attachments, sendmail.Attachment{Filename: attachment.Filename, ContentType: attachment.ContentType, Data: attachment.Data})
 		}
+		// The 20 MiB cap is shared by --attach, --attach-inline and the original
+		// mail's attachments appended above. Left to validateDraft the overflow
+		// would surface as a generic build failure (usage); the compose loader
+		// reports the same overflow as a policy denial, so forward matches it.
+		if total := attachmentBytes(attachments) + attachmentBytes(inlines); total > sendmail.MaxTotalAttachmentBytes {
+			return &errmap.Error{Kind: errmap.PolicyDenied, Message: "附件总大小超过 20 MiB"}
+		}
 		subject := opts.Subject
 		if subject == "" {
 			subject = prefixedSubject(original.Parsed.Subject, "Fwd:")
