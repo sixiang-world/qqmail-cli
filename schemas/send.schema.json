@@ -6,11 +6,31 @@
     {
       "properties": {
         "command": {"const": "send"},
-        "data": {"$ref": "#/$defs/sendResult"}
+        "data": {"$ref": "#/$defs/composeResult"}
       }
     }
   ],
   "$defs": {
+    "composeResult": {
+      "oneOf": [
+        {"$ref": "#/$defs/sendResult"},
+        {"$ref": "#/$defs/saveDraftResult"}
+      ]
+    },
+    "saveDraftResult": {
+      "type": "object",
+      "required": ["dry_run", "execute", "requested", "completed", "ids", "action", "destination"],
+      "properties": {
+        "dry_run": {"type": "boolean"},
+        "execute": {"type": "boolean"},
+        "requested": {"type": "integer", "minimum": 0},
+        "completed": {"type": "integer", "minimum": 0},
+        "ids": {"type": "array", "items": {"type": "string"}},
+        "action": {"const": "save_draft"},
+        "destination": {"type": "string", "description": "UNTRUSTED: folder name may originate from the mail server"},
+        "sent": {"const": false, "description": "always false: storing a draft never sends"}
+      }
+    },
     "sendResult": {
       "type": "object",
       "required": ["dry_run", "execute", "sent", "summary", "max_messages_per_invocation", "message_interval_seconds"],

@@ -116,3 +116,71 @@ func validateDocument(t *testing.T, schemaName string, raw []byte) {
 		t.Fatalf("%s: %v", schemaName, err)
 	}
 }
+
+// Task 2/10/11 annotated email-derived fields (content_id, body_preview,
+// html_source_excerpt) in the shared schemas. The untrusted_paths cross-check
+// only fires when an annotation exists, so silently deleting one would fail
+// nowhere else — these assertions pin the annotations themselves.
+func TestEmailDerivedSchemaAnnotationsStayRegistered(t *testing.T) {
+	cases := []struct {
+		schema   string
+		property string
+	}{
+		{"attachment.list.schema.json", "content_id"},
+		{"message.show.schema.json", "content_id"},
+		{"send.schema.json", "content_id"},
+		{"send.schema.json", "body_preview"},
+		{"send.schema.json", "html_source_excerpt"},
+	}
+	for _, tc := range cases {
+		raw, err := projectschemas.Get(tc.schema)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var document any
+		if err := json.Unmarshal(raw, &document); err != nil {
+			t.Fatal(err)
+		}
+		annotated := map[string]bool{}
+		collectUntrustedProperties(document, "", annotated)
+		if !annotated[tc.property] {
+			t.Errorf("%s lost its UNTRUSTED annotation on %q", tc.schema, tc.property)
+		}
+	}
+	// reply/forward share send's result shape by reference; a duplicated copy
+	// would let the three shapes drift apart.
+	for _, name := range []string{"reply.schema.json", "forward.schema.json"} {
+		raw, err := projectschemas.Get(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(raw), `"send.schema.json#/$defs/composeResult"`) {
+			t.Errorf("%s no longer $refs send.schema.json#/$defs/composeResult", name)
+		}
+	}
+}
+
+// The 0.4 compose additions must stay schema-visible end to end: the
+// --body-format html / --attach-inline dry-run summary carries the derived
+// preview fields and the generated content_id, while --save-draft routes its
+// result through the shared mutation shape — all validate against the same
+// send.schema.json $defs that reply and forward reference.
+func TestV04ComposeOutputMatchesSharedSchemas(t *testing.T) {
+	png := filepath.Join(t.TempDir(), "logo.png")
+	if err := os.WriteFile(png, []byte("\x89PNG\r\n\x1a\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := runCLIReader(t, fakeReader{}, "send", "--to", "reader@example.com", "--subject", "s",
+		"--body-format", "html", "--body", `<p>hi</p><img src="cid:logo">`, "--attach-inline", png, "--json")
+	validateOutput(t, "send.schema.json", []byte(out))
+	mustContain(t, out, `"body_preview"`, `"html_source_excerpt"`, `"content_id"`)
+
+	stub := &saveDraftMutatorStub{}
+	out = runCLIReader(t, stub, "send", "--to", "reader@example.com", "--subject", "s", "--body", "b", "--save-draft", "--json")
+	validateOutput(t, "send.schema.json", []byte(out))
+	mustContain(t, out, `"action":"save_draft"`, `"destination":"Drafts"`)
+
+	out = runCLIReader(t, stub, "reply", inboxIDString, "--body", "thanks", "--save-draft", "--json")
+	validateOutput(t, "reply.schema.json", []byte(out))
+	mustContain(t, out, `"action":"save_draft"`)
+}

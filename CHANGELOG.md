@@ -4,6 +4,88 @@ All notable development changes are recorded here. Formal releases remain owner-
 
 ## Unreleased
 
+### Added (0.4.0 feature-completion round)
+
+- `envelope list --before` / `--to`: two new server-side envelope criteria —
+  an upper time bound (`24h`/`7d`/`YYYY-MM-DD`, composable with `--since` for
+  a window) and a case-insensitive recipient substring — alongside the
+  existing `--since`/`--from`/`--subject`. The criteria the server actually
+  applied are reported in `meta.filters_applied`. Read-class: readonly stays
+  fully usable.
+- `search --server`: server-side keyword search via the IMAP `TEXT`
+  criterion, an alternative to `search --local` (the two are mutually
+  exclusive; `--local` remains the default). The executed mode is reported in
+  `meta.search_mode` (`server_text`/`server_body`). A server NO/BAD refusal
+  of the search is final, not transient: it maps to `policy_denied` (exit 50)
+  with a fall-back-to-local suggestion instead of a retryable classification.
+  The query travels only inside the SEARCH command — never into logs, audit
+  records or error messages. Read-class.
+- `message mark-unread <id>...`: mirrors `mark-read`'s gates exactly —
+  dry-run by default, `--execute` with exact-count TTY confirmation, audited,
+  readonly-gated (exit 50 under readonly). Mutate.
+- `message flag <id>...`: starred-mail management. v0.4 whitelists exactly
+  one flag (`\Flagged`), `--add`/`--remove` are mutually exclusive and one is
+  required; anything else is a usage error. The star is the same marker triage
+  clean plans unconditionally exclude, so removing it deliberately drops that
+  protection — there is no flag outside the whitelist to accidentally widen.
+  Same mutate gates as the other message mutations.
+- `message trash <id>...`: a gated specialization of `message move` whose
+  destination is never an argument — the server trash folder is resolved from
+  LIST (`\Trash` attribute first, then dialect candidates) and resolution
+  failure fails the command instead of guessing. Messages already in the
+  trash are refused instead of moved again. Same mutate gates; the QQ trash
+  auto-purge cycle remains the only permanent deletion.
+- `folder create <name>` / `folder rename <old> <new>`: mail-folder
+  management. `INBOX` is reserved (case-insensitive) — create/rename refuse
+  it because `RENAME INBOX` would move every message in the mailbox. Names
+  are sent raw so go-imap emits standard mUTF-7. Same mutate gates
+  (dry-run → `--execute` → TTY confirmation, audited, readonly-gated).
+- `reply --reply-all`: merges the original To/Cc recipients into the reply
+  (minus your own address); Bcc never propagates. A merge that yields no
+  recipients (the original mail was sent only to you) is a usage error. The
+  send allowlist still applies to every merged recipient — one miss rejects
+  the whole message. Send-class gates unchanged.
+- `send`/`reply`/`forward --body-format html`: the body is sent verbatim as
+  the `text/html` part of a multipart/alternative, never sanitized — the CLI
+  is a transport, not a rewriter. A derived plain-text part is generated for
+  non-HTML clients, and the dry-run preview carries both the escaped,
+  size-capped HTML source excerpt (`html_source_excerpt`) and the derived
+  plain text (`body_preview`) for human review. Send-class gates unchanged.
+- `send`/`reply`/`forward --attach-inline`: inline images referenced by
+  `cid:` from the HTML body are sent as inline parts of a multipart/related
+  structure with generated bare Content-IDs (listed per file in the dry-run
+  preview and in `summary.attachments[].content_id`). Requires
+  `--body-format html` (usage error otherwise) and shares the 20 MiB combined
+  attachment cap with `--attach` (exit 50 when exceeded). Send-class gates
+  unchanged.
+- `send`/`reply`/`forward --save-draft`: appends the exact built message to
+  the server drafts folder (`\Draft` flag) instead of handing it to SMTP.
+  This is a mutation, not a send: the send allowlist does not apply, but the
+  full mutate gates do — dry-run by default, `--execute` with TTY
+  confirmation, audited, readonly-gated. The result reports
+  `action: save_draft`, the resolved drafts `destination`, and `sent: false`
+  always.
+- Inline (CID) images on the read side: non-text inline MIME parts of
+  received mail now surface as attachments with a `content_id` field in
+  `attachment list` and `message show`, are downloadable like any attachment,
+  and are carried automatically by `forward`. Read-class; `content_id` and
+  `body_preview`/`html_source_excerpt` are annotated UNTRUSTED in the schemas
+  and listed in `agent-info`'s `untrusted_paths`.
+- Contract surface: `agent-info` now lists all new commands with their risk
+  levels, and `schema <command>` serves five new embedded schemas
+  (`message.mark-unread`, `message.flag`, `message.trash`, `folder.create`,
+  `folder.rename`); the send/reply/forward schemas gained a shared
+  `composeResult` covering `--save-draft` output. New leaf commands ship with
+  a schema file per the AGENTS.md rule, guarded by contract tests.
+
+Exit-code review for the round: every new command was walked through its
+error paths against the SKILL.md table — readonly denial maps to exit 50,
+invocation mistakes (`--add`/`--remove` exclusivity, `--attach-inline`
+without `--body-format html`, reserved `INBOX`, over-limit values) to exit 2,
+unresolvable trash/drafts folders to exit 40, and server rate limiting to
+exit 30. No new exit codes were introduced and none of the existing meanings
+changed.
+
 ### Fixed (2026-10-05 audit round)
 
 - `restore` can now recover Message-ID-less messages. The clean gate

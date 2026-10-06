@@ -112,8 +112,12 @@ $list.data.envelopes | Select-Object date, from, subject, id
 ```powershell
 .\bin\qqmail-cli.exe envelope list --since 7d --from example.com --limit 50 --json
 .\bin\qqmail-cli.exe envelope list --subject "验证码" --limit 20 --json
+.\bin\qqmail-cli.exe envelope list --before 2026-09-30 --limit 100 --json
+.\bin\qqmail-cli.exe envelope list --to boss@qq.com --limit 50 --json
 .\bin\qqmail-cli.exe envelope list --before-uid 12000 --limit 100 --json
 ```
+
+`--since`/`--before` 接受相对时间（`24h`、`7d`）或绝对日期（`YYYY-MM-DD`）；`--before` 是时间上界，配合 `--since` 可以圈出一段时间窗口。`--to` 按收件人子串过滤。实际生效的服务器端条件记录在输出的 `meta.filters_applied` 里，便于确认过滤器没有被静默忽略。
 
 `id` 是包含文件夹、UIDVALIDITY 和 UID 的不透明标识。请原样保存和传递，不要自行拆解；出现 `stale_id` 时重新列信封。
 
@@ -187,6 +191,18 @@ $list.data.envelopes | Select-Object date, from, subject, id
 .\bin\qqmail-cli.exe cache inspect --json
 ```
 
+### 服务器端检索（search --server）
+
+没有本地索引或刚到的邮件还没 sync 时，可以让服务器直接检索：
+
+```powershell
+.\bin\qqmail-cli.exe search "关键词" --server --limit 50 --json
+```
+
+`--local` 与 `--server` 二选一：`--local` 查本地索引（快、离线、可全文），`--server` 发送 IMAP `TEXT` 检索（实时、但受服务器能力限制）。实际使用的模式记录在 `meta.search_mode`（`server_text` 或 `server_body`）。
+
+服务器拒绝检索条件时返回 `policy_denied`（退出码 50）——这是服务器的最终答复而非瞬时故障，不要重试，改用 `--from`/`--subject` 过滤或先 `sync` 后 `search --local`。检索关键词只进 IMAP SEARCH 命令，不会出现在日志、审计或错误信息里。
+
 ## 11. 分类、计划与备份清理
 
 先分析，再生成人读计划：
@@ -248,23 +264,59 @@ $list.data.envelopes | Select-Object date, from, subject, id
 
 clean 执行中途断网或超时会留下"部分已移走"的状态。直接重跑同一条 `clean --plan … --execute` 即可：已移走且本地备份验证过的邮件会被判为 `already_gone` 安全跳过，剩余邮件继续过门禁执行，不需要清库重建。
 
-## 12. 标已读与移动
+## 12. 标记、移动与文件夹操作
 
-默认 dry-run：
+本节的全部命令默认 dry-run，真实执行统一走 `--execute` 并要求在真实 TTY 中键入精确数量；`QQMAIL_CLI_READONLY=1` 下全部被拒（退出码 50）。
+
+### 标已读 / 标未读
 
 ```powershell
 .\bin\qqmail-cli.exe message mark-read $id1 $id2 --json
-.\bin\qqmail-cli.exe message move $id1 $id2 "目标文件夹" --json
+.\bin\qqmail-cli.exe message mark-unread $id1 $id2 --json
 ```
 
-人工确认真实执行：
+`mark-unread` 是 `mark-read` 的镜像：把已读状态改回未读。人工确认真实执行：
 
 ```powershell
 .\bin\qqmail-cli.exe message mark-read $id1 $id2 --execute --json
+.\bin\qqmail-cli.exe message mark-unread $id1 $id2 --execute --json
+```
+
+### 移动
+
+```powershell
+.\bin\qqmail-cli.exe message move $id1 $id2 "目标文件夹" --json
 .\bin\qqmail-cli.exe message move $id1 $id2 "目标文件夹" --execute --json
 ```
 
-真实执行要求 TTY 中键入精确邮件数量，并进入审计。
+### 星标管理
+
+```powershell
+.\bin\qqmail-cli.exe message flag $id --add \Flagged --json
+.\bin\qqmail-cli.exe message flag $id --remove \Flagged --json
+```
+
+v0.4 只支持星标（`\Flagged`）这一个旗标，`--add` 与 `--remove` 二选一、互斥。星标邮件被 triage 清理计划无条件排除，因此**去掉星标会同时失去这层清理保护**——只在你确实不再需要这封邮件被保护时才 `--remove`。
+
+### 移入回收站
+
+```powershell
+.\bin\qqmail-cli.exe message trash $id1 $id2 --json
+.\bin\qqmail-cli.exe message trash $id1 $id2 --execute --json
+```
+
+`trash` 是 `move` 的特化：目标文件夹不是参数，而是 CLI 从服务器自动识别的回收站（优先 `\Trash` 属性）；已在回收站里的邮件会被拒绝而不重复移动。QQ 会按回收站周期自动清空，误删的邮件要趁早找回——用 `message move` 移回原文件夹，或依赖此前 `export` 的 `.eml` 备份。
+
+### 新建与重命名文件夹
+
+```powershell
+.\bin\qqmail-cli.exe folder create "arch/2026" --json
+.\bin\qqmail-cli.exe folder rename "arch/2026" "arch/2027" --json
+```
+
+`INBOX` 是保留名（不分大小写），create/rename 都拒绝。重命名会把文件夹内全部邮件（含子文件夹层级）带到新名字下。
+
+真实执行要求 TTY 中键入精确数量（folder 操作是 1），并进入审计。
 
 ## 13. 监控、缓存与审计
 
@@ -310,6 +362,53 @@ clean 执行中途断网或超时会留下"部分已移走"的状态。直接重
 检查 from/to/cc/bcc、主题、正文摘要和附件列表后，人工在 TTY 中给同一命令追加 `--execute` 并键入 `SEND`。白名单为空或任一收件人未命中时整封拒发。
 
 每次调用最多发送一封，最多 10 个收件人，正文文件最多 1 MiB，附件总计最多 20 MiB。限流时停止重试 10–15 分钟。
+
+### 全量回复（reply --reply-all）
+
+```powershell
+.\bin\qqmail-cli.exe reply $id --reply-all --body "回复所有人" --json
+```
+
+`--reply-all` 在原有收件人（Reply-To/From）之外合并原邮件的 To/Cc（自动去掉你自己的地址）；Bcc 永远不会被带入。合并后没有任何收件人（原邮件只发给你自己）时按参数错误拒绝。白名单照常生效：不在 `send_allowlist` 里的收件人会让整封拒发。
+
+### HTML 正文（--body-format html）
+
+```powershell
+.\bin\qqmail-cli.exe send --to allowed@example.com --subject "周报" --body-file .\report.html --body-format html --json
+```
+
+`--body-format html` 把正文作为 `text/html` 部件原样发送（不做任何消毒），CLI 同时派生一份降级纯文本部件，供纯文本客户端显示。dry-run 预览会展示 HTML 源码摘要（`html_source_excerpt`）与派生纯文本（`body_preview`）——人要审的就是这两段，确认发送的也包括那份额外纯文本。默认（不加该参数）行为不变：正文按纯文本发送。
+
+### 内嵌图（--attach-inline 与 cid: 引用）
+
+HTML 正文里用 `cid:` 引用图片文件，图片随邮件作为内嵌部件（multipart/related）发送而不是普通附件：
+
+```powershell
+@"
+<p>十月数据见图表：</p>
+<p><img src="cid:chart" alt="月度图表"></p>
+"@ | Set-Content -Path .\body.html -Encoding UTF8
+
+.\bin\qqmail-cli.exe send --to allowed@example.com --subject "十月图表" `
+  --body-file .\body.html --body-format html `
+  --attach-inline .\chart.png --json
+```
+
+规则：
+
+- `--attach-inline` 必须与 `--body-format html` 同用（否则退出码 2）；普通附件仍走 `--attach`，两者合计共享 20 MiB 上限。
+- 每个内嵌文件获得 CLI 生成的 Content-ID，dry-run 预览逐个列出（`Inline: chart.png (image/png, ..., Content-ID: <...>)`），JSON 输出在 `summary.attachments[].content_id`。
+- `reply`/`forward` 也支持 `--attach-inline`；`forward` 会自动携带原邮件的内嵌图数据。
+
+### 存草稿（--save-draft）
+
+```powershell
+.\bin\qqmail-cli.exe send --to allowed@example.com --subject "草稿" --body "先存着" --save-draft --json
+.\bin\qqmail-cli.exe send --to allowed@example.com --subject "草稿" --body "先存着" --save-draft --execute --json
+.\bin\qqmail-cli.exe reply $id --body "回复草稿" --save-draft --json
+```
+
+`--save-draft` 把构建好的邮件追加进服务器草稿箱（优先按 `\Drafts` 属性识别，失败时报错而不是猜名字），而不是交给 SMTP 发送。它是**变更操作不是发送**：不需要收件人白名单，但默认 dry-run，`--execute` 仍需 TTY 中确认，readonly 下同样被拒。结果里 `action` 为 `save_draft`、`destination` 是草稿箱名、`sent` 恒为 `false`。
 
 ## 15. Agent 只读模式
 

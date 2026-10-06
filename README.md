@@ -73,9 +73,9 @@ $ qqmail-cli message show "m1_eyJmIjoiSU5CT1giLCJ2IjoxNDI1LCJ1Ijo4MzQ3fQ" \
 - **整理邮箱** —— 把成千上万封邮件按发件人、类别、时间归堆，一眼看清谁在给你发垃圾。
 - **清理垃圾邮件** —— 规则挑出营销和通知邮件，先本地全量备份、你亲手确认，再移入回收站；删错了 `restore` 一条命令整单找回，本地备份永久兜底。
 - **备份存档** —— 把邮件导出成本地 `.eml` 文件，带哈希校验，随时可验证完整性。
-- **本地检索** —— 把邮箱建成本地索引，全文搜索（含中文）比网页版快，且全程不联网。
+- **本地检索** —— 把邮箱建成本地索引，全文搜索（含中文）比网页版快，且全程不联网；没建索引的邮箱还能让服务器直接检索（`search --server`）。
 - **交给 AI Agent** —— 让 AI 帮你读信、提行动项、起草回复；但读是读、删是删、发是发，删除和发送权牢牢卡在你的人工确认里。
-- **安全发送** —— 发信走收件人白名单 + 人工键入确认，每次一封，绝不失控群发。
+- **安全发送** —— 发信走收件人白名单 + 人工键入确认，每次一封，绝不失控群发；HTML 正文、内嵌图（`--attach-inline` + `cid:`）与存服务器草稿（`--save-draft`）走同一套门禁，星标管理、移入回收站和文件夹整理也都有 dry-run 与人工确认兜底。
 
 ## 文档直达
 
@@ -225,7 +225,7 @@ Agent 集成三件套：
 - `qqmail-cli schema <command>` —— 输出内嵌 JSON Schema，消费任何新形状前先自校验。
 - [`skills/qqmail-cli/SKILL.md`](skills/qqmail-cli/SKILL.md) —— 随仓分发的 Agent 技能文件，装完 CLI 即获得完整调用纪律（Claude Code 等 harness 直接可用）。
 
-关键纪律：先 `envelope list` 一次，再把所有要读的 id 交给**一次** `message show` 批量读取——每次 CLI 调用就是一次 IMAP 登录，高频登录会触发 QQ 风控。退出码语义化：`error.retryable` 为 true 才可重试（指数退避，至多两次）；退出码 30（限流）时立即停手等 10-15 分钟；50（policy_denied）代表安全门禁在工作，需要的是人而不是重试。
+关键纪律：先 `envelope list` 一次，再把所有要读的 id 交给**一次** `message show` 批量读取——每次 CLI 调用就是一次 IMAP 登录，高频登录会触发 QQ 风控。退出码语义化：`error.retryable` 为 true 才可重试（指数退避，至多两次）；退出码 30（限流）时立即停手等 10-15 分钟；50（policy_denied）代表安全门禁在工作，需要的是人而不是重试。0.4 起 Agent 还能经同一套门禁做星标管理（`message flag`）、移入回收站（`message trash`）、文件夹整理（`folder create`/`rename`）、服务器端检索（`search --server`）、存服务器草稿（`--save-draft`）与内嵌图发送（`--attach-inline` + `cid:`），全部默认 dry-run，`agent-info` 与 `schema <command>` 随时可查新命令的风险级别与输出契约。
 
 ## 安全模型
 

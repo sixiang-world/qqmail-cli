@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -61,3 +62,56 @@ func TestUnknownServerErrorNoLongerGuessesAuth(t *testing.T) {
 type strings2error string
 
 func (s strings2error) Error() string { return string(s) }
+
+// Every command added in the 0.4 feature-completion round must have its own
+// embedded schema reachable through `schema <command>` (AGENTS.md: new leaf
+// commands need schemas/<command>.schema.json). The declared command const
+// must also match, so a copy-pasted schema cannot document the wrong shape.
+func TestNewV04CommandsHaveEmbeddedSchemas(t *testing.T) {
+	cases := []struct {
+		schema  string
+		command string
+	}{
+		{"message.mark-unread", "message.mark-unread"},
+		{"message.flag", "message.flag"},
+		{"message.trash", "message.trash"},
+		{"folder.create", "folder.create"},
+		{"folder.rename", "folder.rename"},
+	}
+	for _, tc := range cases {
+		var out, stderr bytes.Buffer
+		rt := &Runtime{Out: &out, Err: &stderr, In: strings.NewReader("")}
+		root := NewRoot(rt)
+		root.SetArgs([]string{"--json", "schema", tc.schema})
+		if err := root.Execute(); err != nil {
+			t.Fatalf("schema %s: %v", tc.schema, err)
+		}
+		if got := schemaCommandConst(t, out.Bytes()); got != tc.command {
+			t.Fatalf("schema %s declares command const %q, want %q", tc.schema, got, tc.command)
+		}
+	}
+}
+
+// schemaCommandConst extracts properties.command.const from the allOf wrapper
+// every command schema uses.
+func schemaCommandConst(t *testing.T, raw []byte) string {
+	t.Helper()
+	var document struct {
+		AllOf []struct {
+			Properties struct {
+				Command struct {
+					Const string `json:"const"`
+				} `json:"command"`
+			} `json:"properties"`
+		} `json:"allOf"`
+	}
+	if err := json.Unmarshal(raw, &document); err != nil {
+		t.Fatalf("schema is not JSON: %v", err)
+	}
+	for _, branch := range document.AllOf {
+		if branch.Properties.Command.Const != "" {
+			return branch.Properties.Command.Const
+		}
+	}
+	return ""
+}
