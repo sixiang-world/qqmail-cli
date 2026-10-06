@@ -70,7 +70,15 @@ func DecodeMailbox(value string) (string, error) {
 		}
 		runes, err := decodeRun(body)
 		if err != nil {
-			return "", &mUTF7Error{at: i, reason: err.Error()}
+			// decodeRun's own error already carries the "modified UTF-7: "
+			// prefix (it is an *mUTF7Error); re-wrapping its Error() verbatim
+			// would double the prefix. Keep only the inner reason and let the
+			// outer error add position and prefix exactly once.
+			reason := err.Error()
+			if inner, ok := err.(*mUTF7Error); ok {
+				reason = inner.reason
+			}
+			return "", &mUTF7Error{at: i, reason: reason}
 		}
 		for _, r := range runes {
 			out.WriteRune(r)

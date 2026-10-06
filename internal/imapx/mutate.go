@@ -94,9 +94,9 @@ func (c *Client) SetFlags(ctx context.Context, id mailmodel.MsgID, add, remove [
 // the selected message state, so unlike the flag primitives they never select a
 // mailbox writable. The caller's raw name goes straight to go-imap, which
 // serializes mailbox arguments as RFC 3501 modified UTF-7 (&-shift form) — the
-// same wire path as message move. Do NOT pre-encode with EncodeMailbox: it
-// emits RFC 2152 '+'-shift form, which is not mUTF-7 and would put a second,
-// nonstandard wire shape for Chinese folder names on this CLI.
+// same wire path as message move. Do NOT pre-encode with EncodeMailbox: since
+// the utf7 rewrite it emits exactly that mUTF-7 target form, so pre-encoding
+// would double-encode (every '&' becomes "&-").
 func (c *Client) CreateFolder(ctx context.Context, name string) error {
 	if err := c.setDeadline(ctx); err != nil {
 		return err
