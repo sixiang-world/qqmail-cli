@@ -79,12 +79,13 @@ All notable development changes are recorded here. Formal releases remain owner-
   a schema file per the AGENTS.md rule, guarded by contract tests.
 
 Exit-code review for the round: every new command was walked through its
-error paths against the SKILL.md table — readonly denial maps to exit 50,
-invocation mistakes (`--add`/`--remove` exclusivity, `--attach-inline`
-without `--body-format html`, reserved `INBOX`, over-limit values) to exit 2,
-unresolvable trash/drafts folders to exit 40, and server rate limiting to
-exit 30. No new exit codes were introduced and none of the existing meanings
-changed.
+error paths against the SKILL.md table — readonly denial and the 20 MiB
+combined attachment/inline cap map to exit 50 (a policy decision needing a
+human, not a retry), invocation mistakes (`--add`/`--remove` exclusivity,
+`--attach-inline` without `--body-format html`, reserved `INBOX`, a bad
+`--before`/`--since` date) to exit 2, unresolvable trash/drafts folders to
+exit 40, and server rate limiting to exit 30. No new exit codes were
+introduced and none of the existing meanings changed.
 
 ### Fixed (2026-10-05 audit round)
 
