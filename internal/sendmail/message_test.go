@@ -247,6 +247,25 @@ func TestDerivePlainText(t *testing.T) {
 	}
 }
 
+// The 2048-byte excerpt cap must not split an escaped entity: SanitizeMarkdown
+// writes every '&' as a complete &#NN; escape, so a cut landing inside one
+// leaves a half-written escape at the tail — the excerpt backs off to that
+// '&' instead.
+func TestHTMLSourceExcerptNeverSplitsEscapedEntity(t *testing.T) {
+	// "<x>" repeats escape to 11-byte "&#60;x&#62;" runs; 2048 mod 11 = 2, so
+	// the plain cut lands two bytes into an entity ("&#").
+	excerpt := htmlSourceExcerpt(strings.Repeat("<x>", 700))
+	if len(excerpt) == 0 || len(excerpt) > maxHTMLSourceExcerptBytes {
+		t.Fatalf("excerpt length %d out of bounds", len(excerpt))
+	}
+	if strings.Count(excerpt, "&") != strings.Count(excerpt, ";") {
+		t.Fatalf("excerpt contains an unterminated escape near %q", excerpt[max(0, len(excerpt)-40):])
+	}
+	if !strings.HasSuffix(excerpt, ";") {
+		t.Fatalf("excerpt ends mid-escape: %q", excerpt[max(0, len(excerpt)-40):])
+	}
+}
+
 // Package-level send/receive fixtures shared by the inline-image tests.
 var (
 	from = mail.Address{Address: "sender@qq.com"}

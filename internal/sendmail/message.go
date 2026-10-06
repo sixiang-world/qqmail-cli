@@ -231,25 +231,31 @@ func Build(draft Draft) ([]byte, error) {
 	return output.Bytes(), nil
 }
 
+// DerivePlainText's patterns compile once at package level: the derivation
+// runs per HTML body on both the Summarize preview and the Build wire path.
+// Go's RE2 regexp has no backreferences, so the brief's single
+// `<(script|style)\b.*?</\1>` pattern becomes two literal-tag patterns
+// with identical (?is) semantics.
+var (
+	htmlScriptRe = regexp.MustCompile(`(?is)<script\b.*?</script\s*>`)
+	htmlStyleRe  = regexp.MustCompile(`(?is)<style\b.*?</style\s*>`)
+	htmlBlockRe  = regexp.MustCompile(`(?i)<(br|/p|/div|/li|/tr|/h[1-6])\b[^>]*>`)
+	htmlTagRe    = regexp.MustCompile(`(?s)<[^>]*>`)
+)
+
 // DerivePlainText renders a deterministic plain-text fallback for an HTML
 // body: block tags become newlines, script/style blocks are dropped, tags
 // are stripped, entities decoded, whitespace collapsed. It is what the
 // recipient's text-mode client will roughly see and what the human confirms.
 func DerivePlainText(source string) string {
-	// Go's RE2 regexp has no backreferences, so the brief's single
-	// `<(script|style)\b.*?</\1>` pattern becomes two literal-tag patterns
-	// with identical (?is) semantics.
-	s := regexp.MustCompile(`(?is)<script\b.*?</script\s*>`).ReplaceAllString(source, "")
-	s = regexp.MustCompile(`(?is)<style\b.*?</style\s*>`).ReplaceAllString(s, "")
-	s = regexp.MustCompile(`(?i)<(br|/p|/div|/li|/tr|/h[1-6])\b[^>]*>`).ReplaceAllString(s, "\n")
-	s = regexp.MustCompile(`(?s)<[^>]*>`).ReplaceAllString(s, "")
+	s := htmlScriptRe.ReplaceAllString(source, "")
+	s = htmlStyleRe.ReplaceAllString(s, "")
+	s = htmlBlockRe.ReplaceAllString(s, "\n")
+	s = htmlTagRe.ReplaceAllString(s, "")
 	s = html.UnescapeString(s)
-	s = strings.Join(strings.Fields(s), " ")
-	lines := strings.Split(s, "\n")
-	for i := range lines {
-		lines[i] = strings.TrimSpace(lines[i])
-	}
-	return strings.TrimSpace(strings.Join(lines, "\n"))
+	// strings.Fields folds every whitespace run — newlines included — into a
+	// single space, so the result is always exactly one line.
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // writeAlternativeBody renders an HTML draft body as a multipart/alternative
@@ -378,6 +384,12 @@ func htmlSourceExcerpt(body string) string {
 			break
 		}
 		truncated = truncated[:len(truncated)-1]
+	}
+	// The escaper writes every '&' as a complete &#NN; entity, so a tail
+	// '&' without a closing ';' is a cut artifact — a half-written escape
+	// that would read as source text. Drop it with everything after it.
+	if amp := strings.LastIndexByte(truncated, '&'); amp >= 0 && amp > strings.LastIndexByte(truncated, ';') {
+		truncated = truncated[:amp]
 	}
 	return truncated
 }
