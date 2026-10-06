@@ -51,7 +51,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer client.close()
+	defer client.logout()
 	pre, err := client.command("CAPABILITY")
 	if err != nil {
 		return err
@@ -186,6 +186,14 @@ func dialRaw(named account.Named) (*rawClient, string, error) {
 }
 
 func (c *rawClient) close() { _ = c.conn.Close() }
+
+// logout mirrors spikes/qqprobe/imap.go: the doc comment promises LOGOUT, so
+// the deferred session teardown actually sends it (best-effort) before the
+// TCP connection is dropped regardless of the reply.
+func (c *rawClient) logout() {
+	_, _ = c.command("LOGOUT")
+	c.close()
+}
 
 func (c *rawClient) readLine() (string, error) {
 	line, err := c.reader.ReadString('\n')
