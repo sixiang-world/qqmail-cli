@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -113,5 +114,24 @@ func TestEnvelopeListToPassesThrough(t *testing.T) {
 	}
 	if len(reader.filters) != 1 || reader.filters[0].To != "alice@example.com" {
 		t.Fatalf("server did not receive TO criteria: %#v", reader.filters)
+	}
+}
+
+// filters_applied is omitempty: a list without any of the new-style filters
+// must omit the key entirely. The check is structural (key absent in the
+// decoded meta object), not a string search — an empty array would still imply
+// a filter ran and matched everything.
+func TestEnvelopeListOmitsFiltersAppliedWithoutFilters(t *testing.T) {
+	out := runCLIReader(t, &envelopeFilterReader{}, "envelope", "list", "--json")
+	var doc struct {
+		Meta json.RawMessage `json:"meta"`
+	}
+	mustUnmarshal(t, out, &doc)
+	var meta map[string]json.RawMessage
+	if err := json.Unmarshal(doc.Meta, &meta); err != nil {
+		t.Fatalf("meta is not a JSON object: %v", err)
+	}
+	if raw, present := meta["filters_applied"]; present {
+		t.Fatalf("filters_applied must be absent without filters, got %s", raw)
 	}
 }
