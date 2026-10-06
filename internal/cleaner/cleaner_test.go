@@ -211,6 +211,27 @@ func TestTrashFolderThreeStates(t *testing.T) {
 	}
 }
 
+func TestDraftsFolderThreeStates(t *testing.T) {
+	ctx := context.Background()
+	// \Drafts special-use attribute wins even when a candidate name also exists.
+	byAttribute := folderLister{folders: []mailmodel.Folder{{Name: "草稿箱", Attributes: []string{`\Drafts`}}, {Name: "Drafts"}}}
+	if name, err := DraftsFolder(ctx, byAttribute); err != nil || name != "草稿箱" {
+		t.Fatalf("attribute detection failed: %q err=%v", name, err)
+	}
+	byName := folderLister{folders: []mailmodel.Folder{{Name: "INBOX"}, {Name: "Drafts"}}}
+	if name, err := DraftsFolder(ctx, byName); err != nil || name != "Drafts" {
+		t.Fatalf("candidate-name fallback failed: %q err=%v", name, err)
+	}
+	chinese := folderLister{folders: []mailmodel.Folder{{Name: "INBOX"}, {Name: "草稿箱"}}}
+	if name, err := DraftsFolder(ctx, chinese); err != nil || name != "草稿箱" {
+		t.Fatalf("chinese candidate fallback failed: %q err=%v", name, err)
+	}
+	none := folderLister{folders: []mailmodel.Folder{{Name: "INBOX"}}}
+	if _, err := DraftsFolder(ctx, none); err == nil {
+		t.Fatal("missing drafts folder did not error")
+	}
+}
+
 type folderLister struct {
 	fixtureReader
 	folders []mailmodel.Folder

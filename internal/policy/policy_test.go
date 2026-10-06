@@ -19,6 +19,8 @@ type fakeMutator struct {
 	setFlagsRemove []string
 	created        []string
 	renamed        [][2]string
+	appendFolder   string
+	appendRaw      []byte
 }
 
 func (f *fakeMutator) Capabilities() ([]string, []string)                           { return nil, f.caps }
@@ -51,6 +53,11 @@ func (f *fakeMutator) CreateFolder(_ context.Context, name string) error {
 }
 func (f *fakeMutator) RenameFolder(_ context.Context, oldName, newName string) error {
 	f.renamed = append(f.renamed, [2]string{oldName, newName})
+	return nil
+}
+func (f *fakeMutator) AppendDraft(_ context.Context, folder string, raw []byte) error {
+	f.appendFolder = folder
+	f.appendRaw = raw
 	return nil
 }
 func (f *fakeMutator) MoveUID(context.Context, mailmodel.MsgID, string) (imapx.MutationResult, error) {
@@ -111,6 +118,32 @@ func TestMarkReadPositivePathAudits(t *testing.T) {
 	entries, err := store.AuditList(context.Background(), 10)
 	if err != nil || len(entries) != 2 {
 		t.Fatalf("audit entries=%+v err=%v", entries, err)
+	}
+}
+
+func TestSaveDraftAppendsAndAudits(t *testing.T) {
+	t.Setenv(ReadonlyEnv, "0")
+	writer := &fakeMutator{}
+	store := openAuditStore(t)
+	service := New(writer, store)
+	err := service.SaveDraft(context.Background(), "Drafts", []byte("MIME-RAW"), "send", "")
+	if err != nil || writer.appendFolder != "Drafts" || string(writer.appendRaw) != "MIME-RAW" {
+		t.Fatalf("save-draft positive path: folder=%q raw=%q err=%v", writer.appendFolder, writer.appendRaw, err)
+	}
+	// AuditList is newest-first: the ok record precedes the attempt record.
+	entries, listErr := store.AuditList(context.Background(), 10)
+	if listErr != nil || len(entries) != 2 || entries[0].Action != "save_draft" || entries[1].Action != "save_draft_attempt" || entries[0].MsgID != "" {
+		t.Fatalf("audit entries=%+v err=%v", entries, listErr)
+	}
+}
+
+func TestReadonlyBlocksSaveDraftBeforeWriter(t *testing.T) {
+	t.Setenv(ReadonlyEnv, "1")
+	writer := &fakeMutator{}
+	service := New(writer, openAuditStore(t))
+	err := service.SaveDraft(context.Background(), "Drafts", []byte("MIME-RAW"), "send", "")
+	if err == nil || writer.appendFolder != "" {
+		t.Fatalf("readonly save-draft was not blocked: err=%v", err)
 	}
 }
 

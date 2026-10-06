@@ -35,6 +35,8 @@ func (s *policyMutatorStub) CreateFolder(context.Context, string) error { return
 
 func (s *policyMutatorStub) RenameFolder(context.Context, string, string) error { return nil }
 
+func (s *policyMutatorStub) AppendDraft(context.Context, string, []byte) error { return nil }
+
 func (s *policyMutatorStub) MoveUID(context.Context, mailmodel.MsgID, string) (imapx.MutationResult, error) {
 	return imapx.MutationResult{}, nil
 }

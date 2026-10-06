@@ -106,6 +106,7 @@ func (m fakeRestoreMutator) CreateFolder(context.Context, string) error { return
 func (m fakeRestoreMutator) RenameFolder(context.Context, string, string) error {
 	return nil
 }
+func (m fakeRestoreMutator) AppendDraft(context.Context, string, []byte) error { return nil }
 func (m fakeRestoreMutator) MoveUID(context.Context, mailmodel.MsgID, string) (imapx.MutationResult, error) {
 	return imapx.MutationResult{Method: "uid_move", DestinationVerified: true}, nil
 }

@@ -275,6 +275,32 @@ func TrashFolder(ctx context.Context, reader imapx.Reader) (string, error) {
 	return "", fmt.Errorf("server trash folder could not be identified")
 }
 
+// DraftsFolder resolves the server drafts folder the same way TrashFolder
+// resolves the trash: the \Drafts special-use attribute first, then the QQ
+// dialect candidate names, and a failure rather than a guess when neither
+// matches — a draft must never land in a wrongly identified folder.
+func DraftsFolder(ctx context.Context, reader imapx.Reader) (string, error) {
+	folders, err := reader.ListFolders(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, folder := range folders {
+		for _, attribute := range folder.Attributes {
+			if strings.EqualFold(attribute, `\Drafts`) {
+				return folder.Name, nil
+			}
+		}
+	}
+	for _, candidate := range []string{"Drafts", "草稿箱"} { // 候选名以 Task 0 探测定案为准
+		for _, folder := range folders {
+			if strings.EqualFold(folder.Name, candidate) {
+				return folder.Name, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("server drafts folder could not be identified")
+}
+
 func normalizeMessageID(value string) string {
 	return strings.ToLower(strings.Trim(strings.TrimSpace(value), "<>"))
 }

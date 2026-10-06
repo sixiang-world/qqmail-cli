@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 	"strconv"
 	"strings"
@@ -25,8 +26,9 @@ import (
 type writableFixture struct {
 	Mutator Mutator
 
-	mu    sync.Mutex
-	lines []string
+	mu      sync.Mutex
+	lines   []string
+	appends []appendRecording
 }
 
 func newWritableFixture(t *testing.T) *writableFixture {
@@ -72,6 +74,20 @@ func newWritableFixture(t *testing.T) *writableFixture {
 				_, _ = fmt.Fprintf(tlsConn, "%s OK stored\r\n", tag)
 			case "CREATE", "RENAME":
 				_, _ = fmt.Fprintf(tlsConn, "%s OK folder done\r\n", tag)
+			case "APPEND":
+				// Synchronizing literal: the fixture has no LITERAL+ capability,
+				// so the client waits for the continuation before streaming the
+				// message bytes and the terminating CRLF.
+				_, _ = fmt.Fprint(tlsConn, "+ ready\r\n")
+				info := parseAppendLine(line)
+				if info.size > 0 {
+					literal := make([]byte, info.size)
+					if _, err := io.ReadFull(reader, literal); err == nil {
+						info.body = literal
+					}
+				}
+				f.recordAppend(info)
+				_, _ = fmt.Fprintf(tlsConn, "%s OK append done\r\n", tag)
 			case "LOGOUT":
 				_, _ = fmt.Fprintf(tlsConn, "* BYE done\r\n%s OK logout\r\n", tag)
 				return

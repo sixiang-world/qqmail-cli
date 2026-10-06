@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/situker/qqmail-cli/internal/account"
+	"github.com/situker/qqmail-cli/internal/cleaner"
 	"github.com/situker/qqmail-cli/internal/errmap"
 	"github.com/situker/qqmail-cli/internal/imapx"
 	"github.com/situker/qqmail-cli/internal/mailmodel"
@@ -37,6 +38,7 @@ type composeOptions struct {
 	Attachments  []string
 	AttachInline []string
 	Execute      bool
+	SaveDraft    bool
 }
 
 type originalMessage struct {
@@ -68,7 +70,7 @@ func newSendCommand(rt *Runtime) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return runDraft(rt, cmd, named, draft, opts.Execute)
+		return runDraft(rt, cmd, named, draft, opts.Execute, opts.SaveDraft)
 	}
 	return cmd
 }
@@ -153,7 +155,7 @@ func newReplyCommand(rt *Runtime) *cobra.Command {
 		}
 		body += quoted
 		draft := sendmail.Draft{From: mail.Address{Address: named.Email}, To: to, Cc: cc, Bcc: bcc, Subject: subject, Body: body, BodyFormat: opts.BodyFormat, Attachments: attachments, Inlines: inlines, InReplyTo: original.Parsed.MessageID, References: original.References}
-		return runDraft(rt, cmd, named, draft, opts.Execute)
+		return runDraft(rt, cmd, named, draft, opts.Execute, opts.SaveDraft)
 	}
 	return cmd
 }
@@ -219,7 +221,7 @@ func newForwardCommand(rt *Runtime) *cobra.Command {
 		}
 		body += forwardOriginal(original.Parsed)
 		draft := sendmail.Draft{From: mail.Address{Address: named.Email}, To: to, Cc: cc, Bcc: bcc, Subject: subject, Body: body, BodyFormat: opts.BodyFormat, Attachments: attachments, Inlines: inlines, References: original.References}
-		return runDraft(rt, cmd, named, draft, opts.Execute)
+		return runDraft(rt, cmd, named, draft, opts.Execute, opts.SaveDraft)
 	}
 	return cmd
 }
@@ -235,6 +237,7 @@ func addComposeFlags(cmd *cobra.Command, opts *composeOptions, requireTo, requir
 	cmd.Flags().StringSliceVar(&opts.Attachments, "attach", nil, "attachment paths (20 MiB combined maximum)")
 	cmd.Flags().StringSliceVar(&opts.AttachInline, "attach-inline", nil, "inline image paths referenced by cid: from the HTML body; requires --body-format html (shares the 20 MiB combined maximum with --attach)")
 	cmd.Flags().BoolVar(&opts.Execute, "execute", false, "send after allowlist validation and TTY confirmation")
+	cmd.Flags().BoolVar(&opts.SaveDraft, "save-draft", false, "append the built message to the server drafts folder (\\Draft) under mutation gates instead of sending; dry-run unless --execute is confirmed")
 	if requireTo {
 		_ = cmd.MarkFlagRequired("to")
 	}
@@ -276,12 +279,18 @@ func draftFromOptions(named account.Named, opts composeOptions) (sendmail.Draft,
 	return sendmail.Draft{From: mail.Address{Address: named.Email}, To: to, Cc: cc, Bcc: bcc, Subject: opts.Subject, Body: body, BodyFormat: opts.BodyFormat, Attachments: attachments, Inlines: inlines}, nil
 }
 
-func runDraft(rt *Runtime, cmd *cobra.Command, named account.Named, draft sendmail.Draft, execute bool) error {
+func runDraft(rt *Runtime, cmd *cobra.Command, named account.Named, draft sendmail.Draft, execute, saveDraft bool) error {
 	raw, err := sendmail.Build(draft)
 	if err != nil {
 		return &errmap.Error{Kind: errmap.Usage, Message: "邮件内容无法构建", Cause: err}
 	}
 	summary := sendmail.Summarize(draft, named.SendAllowlist)
+	if saveDraft {
+		// --save-draft is a mutation, not a send: no allowlist applies, but the
+		// compose-side limits (attachments, inlines, body, recipient count) were
+		// already enforced while building the draft, and the mutate gates below.
+		return runSaveDraft(rt, cmd, raw, summary, execute)
+	}
 	data := map[string]any{"dry_run": !execute, "execute": execute, "sent": false, "summary": summary, "max_messages_per_invocation": sendmail.MaxMessagesPerInvocation, "message_interval_seconds": int(sendmail.DefaultMessageInterval.Seconds())}
 	if !execute {
 		return writeResult(rt, cmd, data, func(w io.Writer) error {
@@ -323,6 +332,69 @@ func runDraft(rt *Runtime, cmd *cobra.Command, named account.Named, draft sendma
 		return writeDetailed(rt, cmd, data, nil, output.Meta{Account: named.Name})
 	}
 	_, err = fmt.Fprintln(rt.Out, "邮件已提交到 SMTP 服务器。")
+	return err
+}
+
+// runSaveDraft is the --save-draft fork shared by send/reply/forward: the
+// exact same built message is APPENDed to the server drafts folder with the
+// \Draft flag instead of being handed to SMTP. Storing a draft sends nothing,
+// so the send allowlist never applies; the mutation gates (readonly, TTY count
+// confirmation) and the audit trail do. The drafts folder is never guessed:
+// dry-run resolves it over a reader connection that logs out immediately, the
+// execute branch resolves it on the mutator connection.
+func runSaveDraft(rt *Runtime, cmd *cobra.Command, raw []byte, summary sendmail.Summary, execute bool) error {
+	if !execute {
+		ctx, cancel := rt.context()
+		defer cancel()
+		reader, _, err := rt.connect(ctx)
+		if err != nil {
+			return err
+		}
+		draftsName, draftsErr := cleaner.DraftsFolder(ctx, reader)
+		_ = reader.Logout(context.Background())
+		if draftsErr != nil {
+			return &errmap.Error{Kind: errmap.NotFound, Message: "无法识别服务器草稿箱文件夹", Suggestion: "见 docs/compat/ 的文件夹方言记录"}
+		}
+		if !rt.JSON {
+			// Same human preview the send dry-run shows, on stdout in text mode;
+			// --json keeps stdout a single machine-readable document.
+			printDraftSummary(rt.Out, summary)
+		}
+		return writeMutationDryRun(rt, cmd, 1, map[string]any{"action": "save_draft", "destination": draftsName})
+	}
+	if err := policy.RequireMutationAllowed(); err != nil {
+		return err
+	}
+	ctx, cancel := rt.context()
+	defer cancel()
+	mutator, mutatorNamed, err := rt.connectMutator(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = mutator.Logout(context.Background()) }()
+	draftsName, err := cleaner.DraftsFolder(ctx, mutator)
+	if err != nil {
+		return &errmap.Error{Kind: errmap.NotFound, Message: "无法识别服务器草稿箱文件夹", Suggestion: "见 docs/compat/ 的文件夹方言记录"}
+	}
+	printDraftSummary(rt.Err, summary)
+	_, _ = fmt.Fprintf(rt.Err, "将把草稿存入服务器草稿箱 %s（不发送）。\n", output.SanitizeHuman(draftsName))
+	if err := confirmExactCount(rt, 1); err != nil {
+		return err
+	}
+	store, err := rt.IndexOpen(mutatorNamed.Name, true)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = store.Close() }()
+	service := policy.New(mutator, store)
+	if err := service.SaveDraft(ctx, draftsName, raw, commandName(cmd), ""); err != nil {
+		return err
+	}
+	data := map[string]any{"dry_run": false, "execute": true, "requested": 1, "completed": 1, "ids": []string{}, "action": "save_draft", "destination": draftsName, "sent": false}
+	if rt.JSON {
+		return writeDetailed(rt, cmd, data, nil, output.Meta{Account: mutatorNamed.Name})
+	}
+	_, err = fmt.Fprintf(rt.Out, "草稿已存入服务器草稿箱 %s（未发送）。\n", output.SanitizeHuman(draftsName))
 	return err
 }
 

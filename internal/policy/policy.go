@@ -203,6 +203,29 @@ func (s *Service) RenameFolder(ctx context.Context, oldName, newName, command st
 	return err
 }
 
+// SaveDraft APPENDs a fully built message to the server drafts folder under
+// the \Draft flag. It is a mutation, not a send: no send allowlist applies,
+// but the readonly gate and the attempt/ok audit pair do. The audit record's
+// id field stays empty — a draft has no message id until the server assigns
+// one, and the content-relevance principle is unaffected.
+func (s *Service) SaveDraft(ctx context.Context, folder string, raw []byte, command, planRef string) error {
+	if err := RequireMutationAllowed(); err != nil {
+		return err
+	}
+	if err := s.record(ctx, command, "save_draft_attempt", "", "attempt", planRef); err != nil {
+		return err
+	}
+	err := s.writer.AppendDraft(ctx, folder, raw)
+	result := "ok"
+	if err != nil {
+		result = "failed"
+	}
+	if auditErr := s.record(ctx, command, "save_draft", "", result, planRef); auditErr != nil && err == nil {
+		return auditErr
+	}
+	return err
+}
+
 func (s *Service) record(ctx context.Context, command, action, id, result, planRef string) error {
 	if s.audit == nil {
 		return fmt.Errorf("policy audit store is required")

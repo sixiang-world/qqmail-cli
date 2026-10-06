@@ -85,6 +85,8 @@ func (s *trashMutatorStub) CreateFolder(context.Context, string) error { return 
 
 func (s *trashMutatorStub) RenameFolder(context.Context, string, string) error { return nil }
 
+func (s *trashMutatorStub) AppendDraft(context.Context, string, []byte) error { return nil }
+
 func (s *trashMutatorStub) MoveUID(_ context.Context, id mailmodel.MsgID, destination string) (imapx.MutationResult, error) {
 	s.moves = append(s.moves, id.String()+"->"+destination)
 	return imapx.MutationResult{Method: "uid_move", Destination: destination, DestinationVerified: true}, nil

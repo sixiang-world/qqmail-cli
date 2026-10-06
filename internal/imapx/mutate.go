@@ -26,6 +26,7 @@ type Mutator interface {
 	SetFlags(context.Context, mailmodel.MsgID, []string, []string) error
 	CreateFolder(context.Context, string) error
 	RenameFolder(context.Context, string, string) error
+	AppendDraft(context.Context, string, []byte) error
 	MoveUID(context.Context, mailmodel.MsgID, string) (MutationResult, error)
 	CopyMarkDeletedUID(context.Context, mailmodel.MsgID, string, MessageIdentity) (MutationResult, error)
 	LocateByIdentity(context.Context, string, MessageIdentity) ([]mailmodel.MsgID, error)
@@ -116,6 +117,29 @@ func (c *Client) RenameFolder(ctx context.Context, oldName, newName string) erro
 	stop := c.watchdog(ctx)
 	defer stop()
 	return c.raw.Rename(oldName, newName, nil).Wait() // beta.8 三参，缺 options 传 nil
+}
+
+// AppendDraft APPENDs one fully built message into a folder with the \Draft
+// flag. APPEND targets a mailbox directly, so unlike the flag primitives it
+// never selects anything writable; the caller resolves the drafts folder name
+// first (cleaner.DraftsFolder). go-imap beta.8's Append takes the literal
+// size, not a reader: the message bytes are written to the returned command,
+// then closed and the tagged reply waited on.
+func (c *Client) AppendDraft(ctx context.Context, folder string, raw []byte) error {
+	if err := c.setDeadline(ctx); err != nil {
+		return err
+	}
+	stop := c.watchdog(ctx)
+	defer stop()
+	cmd := c.raw.Append(folder, int64(len(raw)), &imap.AppendOptions{Flags: []imap.Flag{imap.FlagDraft}})
+	if _, err := cmd.Write(raw); err != nil {
+		return err
+	}
+	if err := cmd.Close(); err != nil {
+		return err
+	}
+	_, err := cmd.Wait()
+	return err
 }
 
 func toFlagList(names []string) []imap.Flag {

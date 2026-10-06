@@ -40,6 +40,8 @@ func (s *folderMutatorStub) RenameFolder(_ context.Context, oldName, newName str
 	return nil
 }
 
+func (s *folderMutatorStub) AppendDraft(context.Context, string, []byte) error { return nil }
+
 func (s *folderMutatorStub) MoveUID(context.Context, mailmodel.MsgID, string) (imapx.MutationResult, error) {
 	return imapx.MutationResult{}, nil
 }

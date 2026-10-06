@@ -269,6 +269,7 @@ func TestReadonlyEnvironmentBlocksEveryMutatingCommandBeforeDial(t *testing.T) {
 		{"--config", configPath, "restore", "--plan", planPath, "--execute"},
 		{"--config", configPath, "cache", "clear", "--execute"},
 		{"--config", configPath, "send", "--to", "reader@example.com", "--subject", "fixture", "--execute"},
+		{"--config", configPath, "send", "--to", "reader@example.com", "--subject", "fixture", "--save-draft", "--execute"},
 		{"--config", configPath, "reply", id, "--execute"},
 		{"--config", configPath, "forward", id, "--to", "reader@example.com", "--execute"},
 	}
