@@ -101,7 +101,13 @@ func parseGoMessage(raw []byte) (Result, error) {
 				if filename == "" {
 					filename = fmt.Sprintf("inline-%d", attachmentIndex)
 				}
-				contentID := strings.Trim(header.Get("Content-Id"), "<>")
+				// Strip exactly one pair of angle brackets after trimming
+				// surrounding space: strings.Trim's set semantics would eat
+				// through doubled brackets and mangle ids that contain them
+				// (<<a>> must become <a>, not a).
+				contentID := strings.TrimSpace(header.Get("Content-Id"))
+				contentID = strings.TrimPrefix(contentID, "<")
+				contentID = strings.TrimSuffix(contentID, ">")
 				result.Attachments = append(result.Attachments, mailmodel.Attachment{
 					Index: attachmentIndex, Filename: filename, ContentType: mediaType,
 					Size: int64(len(content)), ContentID: contentID, Data: content, // content is the value read above; part.Body is already consumed

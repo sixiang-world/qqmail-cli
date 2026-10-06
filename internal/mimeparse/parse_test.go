@@ -70,19 +70,25 @@ func TestParseInlinePartFilenameFallbacks(t *testing.T) {
 		"", "--r", `Content-Type: text/html; charset="UTF-8"`, "", "<p>body</p>",
 		"--r", `Content-Type: image/png; name="named.png"`, "Content-Disposition: inline", "", "aQ==",
 		"--r", `Content-Type: image/png`, "Content-Disposition: inline", "Content-ID: <anon>", "", "aQ==",
+		"--r", `Content-Type: image/png`, "Content-Disposition: inline", "Content-ID: <<double>>", "", "aQ==",
 		"--r--", "",
 	}, "\r\n")
 	got := Parse([]byte(raw))
-	if len(got.Attachments) != 2 {
-		t.Fatalf("want 2 attachments, got %d", len(got.Attachments))
+	if len(got.Attachments) != 3 {
+		t.Fatalf("want 3 attachments, got %d", len(got.Attachments))
 	}
 	// No Content-Disposition filename: fall back to Content-Type name, then to
 	// inline-<index> (the same value as the stable MIME traversal Index).
-	if got.Attachments[0].Filename != "named.png" || got.Attachments[1].Filename != "inline-2" {
+	if got.Attachments[0].Filename != "named.png" || got.Attachments[1].Filename != "inline-2" || got.Attachments[2].Filename != "inline-3" {
 		t.Fatalf("filename fallback wrong: %#v", got.Attachments)
 	}
 	if got.Attachments[1].ContentID != "anon" {
 		t.Fatalf("content id wrong: %#v", got.Attachments[1])
+	}
+	// Only one pair of angle brackets is stripped: <<double>> keeps its inner
+	// brackets instead of being eaten down to "double".
+	if got.Attachments[2].ContentID != "<double>" {
+		t.Fatalf("doubled content id brackets not stripped one layer: %#v", got.Attachments[2])
 	}
 }
 
