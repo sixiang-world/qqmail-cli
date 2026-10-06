@@ -259,6 +259,7 @@ func TestReadonlyEnvironmentBlocksEveryMutatingCommandBeforeDial(t *testing.T) {
 		{"--config", configPath, "triage", "plan", "--output", filepath.Join(dir, "new-plan.json")},
 		{"--config", configPath, "backup", "--plan", planPath, "--output", dir},
 		{"--config", configPath, "message", "mark-read", id, "--execute"},
+		{"--config", configPath, "message", "mark-unread", id, "--execute"},
 		{"--config", configPath, "message", "move", id, "Trash", "--execute"},
 		{"--config", configPath, "clean", "--plan", planPath, "--execute"},
 		{"--config", configPath, "restore", "--plan", planPath, "--execute"},

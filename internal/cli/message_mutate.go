@@ -64,6 +64,56 @@ func newMessageMarkReadCommand(rt *Runtime) *cobra.Command {
 	return cmd
 }
 
+func newMessageMarkUnreadCommand(rt *Runtime) *cobra.Command {
+	var execute bool
+	cmd := &cobra.Command{Use: "mark-unread <id>...", Args: cobra.MinimumNArgs(1), Short: "Mark messages unread; dry-run unless --execute is confirmed"}
+	cmd.Flags().BoolVar(&execute, "execute", false, "perform after TTY count confirmation")
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		ids, err := parseMessageIDs(args)
+		if err != nil {
+			return err
+		}
+		if err := requireFolderConsistency(cmd, rt, ids); err != nil {
+			return err
+		}
+		if !execute {
+			return writeMutationDryRun(rt, cmd, len(ids), map[string]any{"action": "mark_unread"})
+		}
+		if err := policy.RequireMutationAllowed(); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(rt.Err, "将把 %d 封邮件标记为未读。\n", len(ids))
+		if err := confirmExactCount(rt, len(ids)); err != nil {
+			return err
+		}
+		ctx, cancel := rt.context()
+		defer cancel()
+		mutator, named, err := rt.connectMutator(ctx)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = mutator.Logout(context.Background()) }()
+		store, err := rt.IndexOpen(named.Name, true)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = store.Close() }()
+		service := policy.New(mutator, store)
+		completed := []string{}
+		warnings := []output.Warning{}
+		for _, id := range ids {
+			if err := service.MarkUnread(ctx, id, commandName(cmd), ""); err != nil {
+				failure, _ := errmap.Details(err)
+				warnings = append(warnings, output.Warning{Code: failure.Code, Message: failure.Message, ID: id.String(), Retryable: failure.Retryable})
+				continue
+			}
+			completed = append(completed, id.String())
+		}
+		return writeMutationResult(rt, cmd, named.Name, len(ids), completed, warnings, map[string]any{"action": "mark_unread"})
+	}
+	return cmd
+}
+
 func newMessageMoveCommand(rt *Runtime) *cobra.Command {
 	var execute bool
 	cmd := &cobra.Command{Use: "move <id>... <folder>", Args: cobra.MinimumNArgs(2), Short: "Move messages; dry-run unless --execute is confirmed"}

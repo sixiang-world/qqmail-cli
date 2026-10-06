@@ -11,10 +11,12 @@ import (
 )
 
 type fakeMutator struct {
-	caps      []string
-	seenCalls int
-	moveCalls int
-	copyCalls int
+	caps           []string
+	seenCalls      int
+	moveCalls      int
+	copyCalls      int
+	setFlagsAdd    []string
+	setFlagsRemove []string
 }
 
 func (f *fakeMutator) Capabilities() ([]string, []string)                           { return nil, f.caps }
@@ -36,7 +38,9 @@ func (f *fakeMutator) SetSeen(context.Context, mailmodel.MsgID) error {
 	f.seenCalls++
 	return nil
 }
-func (f *fakeMutator) SetFlags(context.Context, mailmodel.MsgID, []string, []string) error {
+func (f *fakeMutator) SetFlags(_ context.Context, _ mailmodel.MsgID, add, remove []string) error {
+	f.setFlagsAdd = add
+	f.setFlagsRemove = remove
 	return nil
 }
 func (f *fakeMutator) MoveUID(context.Context, mailmodel.MsgID, string) (imapx.MutationResult, error) {
