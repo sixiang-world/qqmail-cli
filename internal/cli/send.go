@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/situker/qqmail-cli/internal/account"
 	"github.com/situker/qqmail-cli/internal/cleaner"
@@ -482,7 +484,11 @@ func loadAttachmentFiles(paths []string, loaded int64) ([]sendmail.Attachment, e
 // loadInlineAttachments loads the CID-referenced images of an HTML body. A
 // non-html body format is a usage error — inline parts are meaningless without
 // cid: references; the files share the 20 MiB combined cap with --attach and
-// get a generated bare Content-ID each.
+// each gets a bare Content-ID derived deterministically from its file name, so
+// the cid:<filename> reference in the HTML body resolves on the receiving side.
+// Two files deriving the same id (same base name, or names that sanitize to
+// the same id) are a usage error — a duplicate would leave one cid: reference
+// unresolvable, so there is no silent dedup.
 func loadInlineAttachments(paths []string, bodyFormat string, loaded int64) ([]sendmail.Attachment, error) {
 	if len(paths) == 0 {
 		return nil, nil
@@ -490,19 +496,70 @@ func loadInlineAttachments(paths []string, bodyFormat string, loaded int64) ([]s
 	if bodyFormat != "html" {
 		return nil, &errmap.Error{Kind: errmap.Usage, Message: "--attach-inline 需要 --body-format html", Suggestion: "内嵌图由 HTML 正文通过 cid: 引用，只能与 --body-format html 同用；普通附件请改用 --attach"}
 	}
+	contentIDs := make([]string, len(paths))
+	derived := make(map[string]string, len(paths))
+	for i, path := range paths {
+		id, err := deriveInlineContentID(path)
+		if err != nil {
+			return nil, err
+		}
+		if previous, duplicate := derived[id]; duplicate {
+			return nil, &errmap.Error{Kind: errmap.Usage, Message: fmt.Sprintf("内嵌附件 %q 与 %q 同名：派生出相同的 Content-ID %q", previous, path, id), Suggestion: "HTML 正文按文件名以 cid: 引用内嵌图，--attach-inline 的文件名必须互不相同；请重命名其中一个文件后重试"}
+		}
+		derived[id] = path
+		contentIDs[i] = id
+	}
 	inlines, err := loadAttachmentFiles(paths, loaded)
 	if err != nil {
 		return nil, err
 	}
 	for i := range inlines {
-		contentID, err := sendmail.NewContentID()
-		if err != nil {
-			return nil, err
-		}
-		inlines[i].ContentID = contentID
+		inlines[i].ContentID = contentIDs[i]
 		inlines[i].ContentType = sniffContentType(inlines[i].Filename, inlines[i].Data)
 	}
 	return inlines, nil
+}
+
+// maxInlineContentIDBytes caps the filename-derived Content-ID localpart so
+// the Content-Id header line stays far below the SMTP 998-byte line limit even
+// for pathologically long file names.
+const maxInlineContentIDBytes = 64
+
+// deriveInlineContentID derives a bare Content-ID ("localpart@qqmail-cli.local",
+// no angle brackets — Build wraps it when writing the header) from the file's
+// base name: the HTML body references the image as cid:<filename>, so the same
+// file name must always yield the same resolvable id. Spaces become dashes;
+// control characters, other whitespace, angle brackets and '@' are stripped
+// (they would break the id@domain form or truncate the header value);
+// non-ASCII characters are kept — the localpart of a Content-ID tolerates
+// them. The localpart is truncated at maxInlineContentIDBytes on a rune
+// boundary.
+func deriveInlineContentID(path string) (string, error) {
+	base := filepath.Base(path)
+	var local strings.Builder
+	for _, r := range base {
+		switch {
+		case r == ' ':
+			local.WriteRune('-')
+		case r < 0x20 || r == 0x7f || r == '<' || r == '>' || r == '@' || unicode.IsSpace(r):
+			// Stripped: control characters, remaining whitespace, and the
+			// characters that would break the id@domain form.
+		default:
+			local.WriteRune(r)
+		}
+	}
+	id := local.String()
+	if len(id) > maxInlineContentIDBytes {
+		end := maxInlineContentIDBytes
+		for end > 0 && !utf8.RuneStart(id[end]) {
+			end--
+		}
+		id = id[:end]
+	}
+	if id == "" {
+		return "", &errmap.Error{Kind: errmap.Usage, Message: fmt.Sprintf("无法从内嵌附件文件名 %q 派生 Content-ID：文件名不含可用字符", base), Suggestion: "请用常规字符重命名文件后重试"}
+	}
+	return id + "@qqmail-cli.local", nil
 }
 
 // sniffContentType prefers the extension's registered type, falls back to

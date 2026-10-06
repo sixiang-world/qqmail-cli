@@ -395,11 +395,25 @@ func TestInlineHeaderInjectionRejected(t *testing.T) {
 	}
 }
 
-func TestNewContentIDUniqueAndBare(t *testing.T) {
-	a, err1 := NewContentID()
-	b, err2 := NewContentID()
-	if err1 != nil || err2 != nil || a == b || strings.ContainsAny(a, "<>") {
-		t.Fatalf("content ids: %q %q (%v %v)", a, b, err1, err2)
+// The two validateDraft Content-ID defenses get direct assertions (review
+// Minor #1): a control character in the id — the kind of byte a raw file name
+// carries into a hand-built Draft — and a whitespace-only id that would
+// otherwise be written as the empty header "Content-Id: <>".
+func TestInlineContentIDValidationBranches(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		contentID string
+		wantErr   string
+	}{
+		{"control character in content id", "logo\x01.png@qqmail-cli.local", "control character"},
+		{"whitespace-only content id", "   ", "content id"},
+	} {
+		draft := Draft{From: from, To: []mail.Address{to}, Subject: "s", Body: "<p>x</p>", BodyFormat: "html",
+			Inlines: []Attachment{{Filename: "logo.png", ContentID: tc.contentID, Data: []byte(pngBytes)}}}
+		_, err := Build(draft)
+		if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+			t.Fatalf("%s: want error containing %q, got %v", tc.name, tc.wantErr, err)
+		}
 	}
 }
 

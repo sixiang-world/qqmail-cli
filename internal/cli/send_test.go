@@ -242,7 +242,7 @@ func saveSendConfig(t *testing.T, allowlist []string) string {
 }
 
 // --attach-inline wiring for send/reply/forward: the usage gate without html
-// format, the dry-run preview with generated Content-IDs, the 20 MiB cap
+// format, the dry-run preview with filename-derived Content-IDs, the 20 MiB cap
 // shared with --attach, and the unchanged --execute TTY SEND gate.
 func TestAttachInlineFlagWiring(t *testing.T) {
 	pngMagic := []byte("\x89PNG\r\n\x1a\n")
@@ -293,9 +293,8 @@ func TestAttachInlineFlagWiring(t *testing.T) {
 		}
 		human := out.String() + stderr.String()
 		for _, want := range []string{
-			"Inline: logo.png (image/png, 8 bytes, Content-ID: <",
-			"Inline: imageblob (image/png, 8 bytes, Content-ID: <",
-			"@qqmail-cli.local>)",
+			"Inline: logo.png (image/png, 8 bytes, Content-ID: <logo.png@qqmail-cli.local>)",
+			"Inline: imageblob (image/png, 8 bytes, Content-ID: <imageblob@qqmail-cli.local>)",
 			"HTML 正文将原样发送，未经消毒；请检查上方源码摘要",
 		} {
 			if !strings.Contains(human, want) {
@@ -333,7 +332,7 @@ func TestAttachInlineFlagWiring(t *testing.T) {
 			t.Fatal(err)
 		}
 		attachments := envelope.Data.Summary.Attachments
-		if len(attachments) != 1 || attachments[0].Filename != "logo.png" || !strings.HasSuffix(attachments[0].ContentID, "@qqmail-cli.local") {
+		if len(attachments) != 1 || attachments[0].Filename != "logo.png" || attachments[0].ContentID != "logo.png@qqmail-cli.local" {
 			t.Fatalf("unexpected summary attachments: %+v", attachments)
 		}
 	})
@@ -359,9 +358,33 @@ func TestAttachInlineFlagWiring(t *testing.T) {
 		}
 	})
 
+	// Two --attach-inline files deriving the same bare Content-ID (same base
+	// name in different directories) are a usage error, not a silent dedup:
+	// the HTML body references images by file name, so a duplicate would leave
+	// one cid: reference unresolvable on the receiving side.
+	t.Run("duplicate inline filenames rejected", func(t *testing.T) {
+		t.Setenv("QQMAIL_CLI_READONLY", "0")
+		configPath := saveSendConfig(t, nil)
+		dir := t.TempDir()
+		sub := filepath.Join(dir, "sub")
+		if err := os.MkdirAll(sub, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		first := writeInlineFixture(t, dir, "logo.png", len(pngMagic))
+		second := writeInlineFixture(t, sub, "logo.png", len(pngMagic))
+		rt := &Runtime{Out: &bytes.Buffer{}, Err: &bytes.Buffer{}, In: strings.NewReader(""), Secrets: &secrets.Memory{}}
+		root := NewRoot(rt)
+		root.SetArgs([]string{"--config", configPath, "send", "--to", "reader@example.com", "--subject", "fixture",
+			"--body", "<p>x</p>", "--body-format", "html", "--attach-inline", first, "--attach-inline", second})
+		err := root.Execute()
+		if err == nil || errmap.Classify(err).Kind != errmap.Usage || !strings.Contains(err.Error(), "logo.png@qqmail-cli.local") {
+			t.Fatalf("duplicate inline file names must be a usage error naming the derived id, got %v", err)
+		}
+	})
+
 	// --execute with inlines present keeps both gate halves: non-TTY is
-	// rejected before any transport, TTY + SEND reaches it with a generated
-	// bare Content-ID and a multipart/related wire format.
+	// rejected before any transport, TTY + SEND reaches it with a
+	// filename-derived bare Content-ID and a multipart/related wire format.
 	t.Run("execute keeps TTY SEND gate", func(t *testing.T) {
 		t.Setenv("QQMAIL_CLI_READONLY", "0")
 		configPath := saveSendConfig(t, []string{"reader@example.com"})
@@ -398,8 +421,8 @@ func TestAttachInlineFlagWiring(t *testing.T) {
 					t.Fatalf("expected 1 inline, got %d", len(draft.Inlines))
 				}
 				cid := draft.Inlines[0].ContentID
-				if cid == "" || strings.ContainsAny(cid, "<>") || !strings.HasSuffix(cid, "@qqmail-cli.local") {
-					t.Fatalf("unexpected generated content id: %q", cid)
+				if cid != "logo.png@qqmail-cli.local" {
+					t.Fatalf("content id not derived from filename: %q", cid)
 				}
 				if draft.Inlines[0].Filename != "logo.png" || draft.Inlines[0].ContentType != "image/png" {
 					t.Fatalf("unexpected inline part: %+v", draft.Inlines[0])
@@ -414,6 +437,9 @@ func TestAttachInlineFlagWiring(t *testing.T) {
 		}
 		if len(rawMessage) == 0 || !bytes.Contains(rawMessage, []byte("multipart/related")) {
 			t.Fatalf("sent raw message is not multipart/related")
+		}
+		if !bytes.Contains(rawMessage, []byte("Content-Id: <logo.png@qqmail-cli.local>")) {
+			t.Fatalf("sent raw message missing the filename-derived Content-Id header")
 		}
 	})
 
@@ -450,7 +476,7 @@ func TestAttachInlineFlagWiring(t *testing.T) {
 					},
 					SendMail: func(_ context.Context, _ account.Named, _ string, draft sendmail.Draft, _ []byte) error {
 						called = true
-						if draft.BodyFormat != "html" || len(draft.Inlines) != 1 || draft.Inlines[0].Filename != "logo.png" || draft.Inlines[0].ContentID == "" {
+						if draft.BodyFormat != "html" || len(draft.Inlines) != 1 || draft.Inlines[0].Filename != "logo.png" || draft.Inlines[0].ContentID != "logo.png@qqmail-cli.local" {
 							t.Fatalf("%s dropped --attach-inline: format=%q inlines=%+v", tc.name, draft.BodyFormat, draft.Inlines)
 						}
 						return nil
@@ -465,6 +491,63 @@ func TestAttachInlineFlagWiring(t *testing.T) {
 					t.Fatal("transport was not called")
 				}
 			})
+		}
+	})
+}
+
+// The Content-ID must be derived deterministically from the file name so the
+// cid:<filename> reference in the HTML body resolves on the receiving side:
+// spaces become dashes, control characters/angle brackets/'@'/whitespace are
+// stripped, non-ASCII is kept, over-long names are truncated, and a name
+// without usable characters is a usage error instead of an empty localpart.
+func TestInlineContentIDDerivedFromFilename(t *testing.T) {
+	t.Run("loader sets the derived bare id", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "logo.png")
+		if err := os.WriteFile(path, []byte("\x89PNG\r\n\x1a\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		inlines, err := loadInlineAttachments([]string{path}, "html", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(inlines) != 1 || inlines[0].ContentID != "logo.png@qqmail-cli.local" || inlines[0].ContentType != "image/png" {
+			t.Fatalf("unexpected inlines: %+v", inlines)
+		}
+	})
+	t.Run("spaces become dashes", func(t *testing.T) {
+		id, err := deriveInlineContentID("pic/my chart.png")
+		if err != nil || id != "my-chart.png@qqmail-cli.local" {
+			t.Fatalf("id=%q err=%v", id, err)
+		}
+	})
+	// A raw file name can carry bytes that would break the id@domain form:
+	// control characters (e.g. \x01 from a bad archive) must be stripped, not
+	// sent, and angle brackets/'@' would truncate or forge the header value.
+	t.Run("control characters angle brackets and at are stripped", func(t *testing.T) {
+		id, err := deriveInlineContentID("dir/de\x01ad<b>@v1.png")
+		if err != nil || id != "deadbv1.png@qqmail-cli.local" {
+			t.Fatalf("id=%q err=%v", id, err)
+		}
+	})
+	t.Run("non-ascii preserved", func(t *testing.T) {
+		id, err := deriveInlineContentID("报表/图表.png")
+		if err != nil || id != "图表.png@qqmail-cli.local" {
+			t.Fatalf("id=%q err=%v", id, err)
+		}
+	})
+	t.Run("long filename truncated", func(t *testing.T) {
+		id, err := deriveInlineContentID("pic/" + strings.Repeat("a", 200) + ".png")
+		want := strings.Repeat("a", 64) + "@qqmail-cli.local"
+		if err != nil || id != want {
+			t.Fatalf("id length=%d err=%v, want 64-byte localpart", len(id), err)
+		}
+	})
+	t.Run("filename without usable characters rejected", func(t *testing.T) {
+		for _, path := range []string{"dir/<>@", "\t\t"} {
+			id, err := deriveInlineContentID(path)
+			if err == nil || errmap.Classify(err).Kind != errmap.Usage || id != "" {
+				t.Fatalf("path %q: want usage error, got id=%q err=%v", path, id, err)
+			}
 		}
 	})
 }

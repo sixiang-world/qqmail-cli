@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/base64"
-	"encoding/hex"
 	"fmt"
 	"html"
 	"io"
@@ -507,17 +506,6 @@ func newMessageID(address string) (string, error) {
 		domain = address[at+1:]
 	}
 	return fmt.Sprintf("<%x@%s>", raw, domain), nil
-}
-
-// NewContentID returns a fresh bare Content-ID ("hex@qqmail-cli.local", no
-// angle brackets — Build wraps it when writing the Content-Id header). Like
-// newMessageID it returns the rand failure instead of panicking.
-func NewContentID() (string, error) {
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%s@qqmail-cli.local", hex.EncodeToString(b[:])), nil
 }
 
 func formatMessageID(value string) string {
