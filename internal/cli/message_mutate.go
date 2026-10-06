@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/situker/qqmail-cli/internal/cleaner"
 	"github.com/situker/qqmail-cli/internal/errmap"
 	"github.com/situker/qqmail-cli/internal/imapx"
 	"github.com/situker/qqmail-cli/internal/mailmodel"
@@ -264,6 +265,105 @@ func newMessageMoveCommand(rt *Runtime) *cobra.Command {
 		return writeMutationResult(rt, cmd, named.Name, len(ids), completed, warnings, extra)
 	}
 	return cmd
+}
+
+// newMessageTrashCommand is message move specialized to the server trash: the
+// destination is never an argument — it is whatever cleaner.TrashFolder
+// resolves from LIST (\Trash attribute first, then dialect candidates), and a
+// resolution failure fails the command instead of guessing a folder name.
+func newMessageTrashCommand(rt *Runtime) *cobra.Command {
+	var execute bool
+	cmd := &cobra.Command{Use: "trash <id>...", Args: cobra.MinimumNArgs(1), Short: "Move messages to the server trash folder; dry-run unless --execute is confirmed"}
+	cmd.Flags().BoolVar(&execute, "execute", false, "perform after TTY count confirmation")
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		ids, err := parseMessageIDs(args)
+		if err != nil {
+			return err
+		}
+		if err := requireFolderConsistency(cmd, rt, ids); err != nil {
+			return err
+		}
+		if !execute {
+			// Dry-run must not hold a write connection: resolve the trash
+			// folder over a reader-side connection and log out immediately.
+			ctx, cancel := rt.context()
+			defer cancel()
+			reader, _, err := rt.connect(ctx)
+			if err != nil {
+				return err
+			}
+			destination, trashErr := cleaner.TrashFolder(ctx, reader)
+			_ = reader.Logout(context.Background())
+			if trashErr != nil {
+				return &errmap.Error{Kind: errmap.NotFound, Message: "无法识别服务器回收站文件夹", Suggestion: "见 docs/compat/ 的文件夹方言记录"}
+			}
+			if err := refuseAlreadyInTrash(ids, destination); err != nil {
+				return err
+			}
+			return writeMutationDryRun(rt, cmd, len(ids), map[string]any{"action": "trash", "destination": destination})
+		}
+		if err := policy.RequireMutationAllowed(); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(rt.Err, "将把 %d 封邮件移入服务器回收站。\n", len(ids))
+		if err := confirmExactCount(rt, len(ids)); err != nil {
+			return err
+		}
+		ctx, cancel := rt.context()
+		defer cancel()
+		mutator, named, err := rt.connectMutator(ctx)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = mutator.Logout(context.Background()) }()
+		destination, err := cleaner.TrashFolder(ctx, mutator)
+		if err != nil {
+			return &errmap.Error{Kind: errmap.NotFound, Message: "无法识别服务器回收站文件夹", Suggestion: "见 docs/compat/ 的文件夹方言记录"}
+		}
+		if err := refuseAlreadyInTrash(ids, destination); err != nil {
+			return err
+		}
+		store, err := rt.IndexOpen(named.Name, true)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = store.Close() }()
+		service := policy.New(mutator, store)
+		completed := []string{}
+		warnings := []output.Warning{}
+		results := []imapx.MutationResult{}
+		for _, id := range ids {
+			identity, identityErr := fetchMessageIdentity(ctx, mutator, id)
+			if identityErr != nil {
+				failure, _ := errmap.Details(identityErr)
+				warnings = append(warnings, output.Warning{Code: failure.Code, Message: failure.Message, ID: id.String(), Retryable: failure.Retryable})
+				continue
+			}
+			result, moveErr := service.Move(ctx, id, destination, identity, commandName(cmd), "")
+			if moveErr != nil {
+				failure, _ := errmap.Details(moveErr)
+				warnings = append(warnings, output.Warning{Code: failure.Code, Message: failure.Message, ID: id.String(), Retryable: failure.Retryable})
+				continue
+			}
+			completed = append(completed, id.String())
+			results = append(results, result)
+		}
+		extra := map[string]any{"action": "trash", "destination": destination, "mutation_results": results}
+		return writeMutationResult(rt, cmd, named.Name, len(ids), completed, warnings, extra)
+	}
+	return cmd
+}
+
+// refuseAlreadyInTrash rejects the batch when any id already lives in the
+// resolved trash folder. message trash is a gated specialization of move, so
+// moving a message onto itself is a usage error, never a silent no-op.
+func refuseAlreadyInTrash(ids []mailmodel.MsgID, destination string) error {
+	for _, id := range ids {
+		if strings.EqualFold(id.Folder, destination) {
+			return &errmap.Error{Kind: errmap.Usage, Message: "邮件已在回收站文件夹内，无需再次 trash"}
+		}
+	}
+	return nil
 }
 
 func parseMessageIDs(values []string) ([]mailmodel.MsgID, error) {

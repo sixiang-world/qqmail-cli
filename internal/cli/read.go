@@ -188,7 +188,7 @@ func containsNonASCII(value string) bool {
 
 func newMessageCommand(rt *Runtime) *cobra.Command {
 	root := requireSubcommand(&cobra.Command{Use: "message", Short: "Read full messages"})
-	root.AddCommand(newMessageShowCommand(rt), newMessageMarkReadCommand(rt), newMessageMarkUnreadCommand(rt), newMessageFlagCommand(rt), newMessageMoveCommand(rt))
+	root.AddCommand(newMessageShowCommand(rt), newMessageMarkReadCommand(rt), newMessageMarkUnreadCommand(rt), newMessageFlagCommand(rt), newMessageMoveCommand(rt), newMessageTrashCommand(rt))
 	return root
 }
 
