@@ -154,51 +154,51 @@ func newReplyCommand(rt *Runtime) *cobra.Command {
 			return err
 		}
 		reportOriginalWarnings(rt, original)
-	body, err := composeBody(opts.Body, opts.BodyFile)
-	if err != nil {
-		return err
-	}
-	to := original.ReplyTo
-	if len(to) == 0 {
-		to = modelAddresses(original.Parsed.From)
-	}
-	if len(to) == 0 {
-		return &errmap.Error{Kind: errmap.ParseError, Message: "原邮件没有可用的回复地址"}
-	}
-	cc := []mail.Address{}
-	if replyAll {
-		// Reply-all extends the reply semantics (Reply-To, default From)
-		// with the original To/Cc; the original Bcc never takes part.
-		to, cc = mergeReplyAll(named.Email, to, original.To, original.Cc)
-		if len(to)+len(cc) == 0 {
-			return &errmap.Error{Kind: errmap.Usage, Message: "reply-all 合并后没有收件人（原邮件只发给你自己）"}
+		body, err := composeBody(opts.Body, opts.BodyFile)
+		if err != nil {
+			return err
 		}
-	}
-	extra, err := parseAddresses(opts.Cc)
-	if err != nil {
-		return err
-	}
-	cc = append(cc, extra...)
-	bcc, err := parseAddresses(opts.Bcc)
-	if err != nil {
-		return err
-	}
-	domain, err := senderDomain(named.Email)
-	if err != nil {
-		return err
-	}
-	attachments, err := loadAttachments(opts.Attachments)
-	if err != nil {
-		return err
-	}
-	inlines, err := loadInlineAttachments(opts.AttachInline, opts.BodyFormat, domain, attachmentBytes(attachments))
-	if err != nil {
-		return err
-	}
-	subject := opts.Subject
-	if subject == "" {
-		subject = prefixedSubject(original.Parsed.Subject, "Re:")
-	}
+		to := original.ReplyTo
+		if len(to) == 0 {
+			to = modelAddresses(original.Parsed.From)
+		}
+		if len(to) == 0 {
+			return &errmap.Error{Kind: errmap.ParseError, Message: "原邮件没有可用的回复地址"}
+		}
+		cc := []mail.Address{}
+		if replyAll {
+			// Reply-all extends the reply semantics (Reply-To, default From)
+			// with the original To/Cc; the original Bcc never takes part.
+			to, cc = mergeReplyAll(named.Email, to, original.To, original.Cc)
+			if len(to)+len(cc) == 0 {
+				return &errmap.Error{Kind: errmap.Usage, Message: "reply-all 合并后没有收件人（原邮件只发给你自己）"}
+			}
+		}
+		extra, err := parseAddresses(opts.Cc)
+		if err != nil {
+			return err
+		}
+		cc = append(cc, extra...)
+		bcc, err := parseAddresses(opts.Bcc)
+		if err != nil {
+			return err
+		}
+		domain, err := senderDomain(named.Email)
+		if err != nil {
+			return err
+		}
+		attachments, err := loadAttachments(opts.Attachments)
+		if err != nil {
+			return err
+		}
+		inlines, err := loadInlineAttachments(opts.AttachInline, opts.BodyFormat, domain, attachmentBytes(attachments))
+		if err != nil {
+			return err
+		}
+		subject := opts.Subject
+		if subject == "" {
+			subject = prefixedSubject(original.Parsed.Subject, "Re:")
+		}
 		quoted := quoteOriginal(original.Parsed)
 		if body != "" {
 			body += "\n\n"
