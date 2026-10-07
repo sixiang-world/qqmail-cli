@@ -15,11 +15,12 @@
 
 > [!IMPORTANT]
 > **This repository is an active fork of [situker/qqmail-cli](https://github.com/situker/qqmail-cli).**
-> The upstream author's version stopped at `0.3.0-dev` (tag v0.1.0); this fork continues development
-> and ships **v0.4.0** — twelve feature completions including server-side keyword search,
-> star/trash/folder management, HTML and inline-image sending, and server-side drafts (see the
-> [project status](#project-status)). Upstream attribution is preserved in [NOTICE](NOTICE), and
-> every security gate from the original design carries over unchanged.
+> The upstream author's version stopped at `0.3.0-dev` (tag v0.1.0); this fork continues development:
+> it shipped **v0.4.0** (twelve feature completions — server-side keyword search, star/trash/folder
+> management, HTML and inline-image sending, server-side drafts) and has since added **agent-driven
+> auto-sending** (`auto_send` within the allowlist, with a blacklist and a daily cap) and
+> **`--draft-file`** (compose from a TOML file). Upstream attribution is preserved in [NOTICE](NOTICE),
+> and every security gate from the original design carries over unchanged.
 >
 > qqmail-cli is an independent third-party open-source project. It is not affiliated with, endorsed by, or authorized by Tencent or QQ Mail. It works exclusively through the standard IMAP/SMTP services that users enable themselves, and it is unrelated to the qmail ecosystem's qmailctl tool.
 
@@ -239,6 +240,8 @@ The agent integration kit:
 
 The key discipline: run `envelope list` once, then hand every id to **one** `message show` batch call — each CLI invocation is one IMAP login, and frequent logins trigger QQ's rate controls. Exit codes are semantic: retry only when `error.retryable` is true (exponential backoff, two attempts max); on exit 30 (rate-limited) stop and wait 10–15 minutes; exit 50 (policy denied) means a safety gate is doing its job and the answer is a human, not a retry.
 
+- **Auto-sending (optional)**: with `auto_send = true` in the account config, sends to allowlisted recipients complete without a terminal confirmation (blacklisted addresses fall back to the interactive gate; a daily cap bounds damage; everything is audited). A whole letter can live in a TOML draft file — `send --draft-file mail.toml --execute` — so agents stop fighting shell quoting.
+
 ## Security model
 
 | Layer | Mechanism | Proof |
@@ -248,7 +251,7 @@ The key discipline: run `envelope list` once, then hand every id to **one** `mes
 | Write boundary | go-imap write methods confined to one file, callable only by the policy layer | `go/ast` static scans in CI |
 | No deletion | No permanent-delete command; EXPUNGE/CLOSE banned everywhere | AST ban table + wire-transcript assertions |
 | Cleanup gates | Backup HMAC + local hashes + per-message server truth + typed TTY count | Table-driven gate-failure tests + end-to-end test |
-| Send gates | Full allowlist match + dry-run default + typed TTY `SEND` + one message per run | Local TLS SMTP fixture regressions |
+| Send gates | Full allowlist match + dry-run default + typed TTY `send` (case-insensitive; skipped inside the allowlist only when `auto_send` is on — blacklist, daily cap and readonly still intercept) + one message per run | Local TLS SMTP fixture regressions + autosend invariant tests |
 
 Further reading: [Cleanup safety model](docs/v0.2-safety.md) · [Safe sending](docs/sending.md) · [Security policy](SECURITY.md)
 
@@ -303,7 +306,7 @@ Not supported, by design. qqmail-cli's entire value proposition is doing one pro
 
 ## Project status
 
-Source version `0.4.0` ([release](https://github.com/sixiang-world/qqmail-cli/releases/tag/v0.4.0)), covering four stages: the read-only core (v0.1), local indexing with gated cleanup (v0.2), allowlisted sending (v0.3), and the v0.4 completion round — server-side keyword search (body match, per the archived dialect probe), envelope `--before/--to`, star/trash/folder management, `--reply-all`, `--body-format html`, `--attach-inline`, and `--save-draft`. As of 2026-10-07, the complete unit and integration suites, static guards, vulnerability scans, the PowerShell 5.1 smoke test, and six-platform builds all pass; timestamped read-only observations against real QQ servers (including the search-dialect verdict and drafts-folder resolution) live in the [compatibility records](docs/compat/README.md); see the [CHANGELOG](CHANGELOG.md).
+Source version `0.4.0` ([release](https://github.com/sixiang-world/qqmail-cli/releases/tag/v0.4.0)), covering four stages: the read-only core (v0.1), local indexing with gated cleanup (v0.2), allowlisted sending (v0.3), and the v0.4 completion round — server-side keyword search (body match, per the archived dialect probe), envelope `--before/--to`, star/trash/folder management, `--reply-all`, `--body-format html`, `--attach-inline`, and `--save-draft`. As of 2026-10-07, the complete unit and integration suites, static guards, vulnerability scans, the PowerShell 5.1 smoke test, and six-platform builds all pass; timestamped read-only observations against real QQ servers (including the search-dialect verdict and drafts-folder resolution) live in the [compatibility records](docs/compat/README.md). Since v0.4.0, main also carries agent-driven auto-sending and draft files (unreleased; see the [CHANGELOG](CHANGELOG.md) Unreleased section).
 
 ## Contributing
 

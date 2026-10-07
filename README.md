@@ -15,9 +15,10 @@
 
 > [!IMPORTANT]
 > **本仓库是 [situker/qqmail-cli](https://github.com/situker/qqmail-cli) 的活跃 fork。**
-> 上游作者司徒K 的版本停在 `0.3.0-dev`（标签 v0.1.0）；本仓库在其基础上继续开发并发布
-> **v0.4.0**——服务端关键词检索、星标/回收站/文件夹管理、HTML 与内嵌图发送、服务器草稿等
-> 12 项功能补全（见 [v0.4.0 亮点](#v040-做了什么)）。上游署名按 [NOTICE](NOTICE) 完整保留，
+> 上游作者司徒K 的版本停在 `0.3.0-dev`（标签 v0.1.0）；本仓库在其基础上持续开发：已发布
+> **v0.4.0**（服务端关键词检索、星标/回收站/文件夹管理、HTML 与内嵌图发送、服务器草稿等
+> 12 项功能补全），此后又加入 **Agent 自动发送（autosend）** 与 **草稿文件（--draft-file）**
+> 能力。完整差异清单见 [相对上游做了什么](#相对上游做了什么)。上游署名按 [NOTICE](NOTICE) 完整保留，
 > 项目原设计原则与全部安全门禁一脉相承。
 >
 > qqmail-cli 是独立的第三方开源项目，与腾讯及 QQ 邮箱不存在隶属、合作或官方授权关系；
@@ -64,7 +65,7 @@ $ qqmail-cli message show "m1_eyJmIjoiSU5CT1giLCJ2IjoxNDI1LCJ1Ijo4MzQ3fQ" \
 
 ## 目录
 
-[它能帮你做什么](#它能帮你做什么) · [v0.4.0 做了什么](#v040-做了什么) · [为什么是 qqmail-cli](#为什么是-qqmail-cli) · [什么时候不该用它](#什么时候不该用它) · [安装](#安装) · [五分钟上手](#五分钟上手) · [常用工作流](#常用工作流) · [给 AI Agent 用](#给-ai-agent-用) · [安全模型](#安全模型) · [FAQ](#faq) · [项目状态](#项目状态) · [参与贡献](#参与贡献) · [致谢与许可](#致谢与许可)
+[它能帮你做什么](#它能帮你做什么) · [相对上游做了什么](#相对上游做了什么) · [为什么是 qqmail-cli](#为什么是-qqmail-cli) · [什么时候不该用它](#什么时候不该用它) · [安装](#安装) · [五分钟上手](#五分钟上手) · [常用工作流](#常用工作流) · [给 AI Agent 用](#给-ai-agent-用) · [安全模型](#安全模型) · [FAQ](#faq) · [项目状态](#项目状态) · [参与贡献](#参与贡献) · [致谢与许可](#致谢与许可)
 
 ## 它能帮你做什么
 
@@ -73,11 +74,13 @@ $ qqmail-cli message show "m1_eyJmIjoiSU5CT1giLCJ2IjoxNDI1LCJ1Ijo4MzQ3fQ" \
 - **备份存档** —— 把邮件导出成本地 `.eml` 文件，带哈希校验，随时可验证完整性。
 - **本地与服务端检索** —— 本地 FTS5 全文索引（含中文）比网页版快且不联网；没建索引的邮箱让服务器直接搜（`search --server`，按正文匹配）。
 - **交给 AI Agent** —— 让 AI 帮你读信、提行动项、起草回复；但读是读、删是删、发是发，删除和发送权牢牢卡在你的人工确认里。
-- **安全发送** —— 发信走收件人白名单 + 人工键入确认，每次一封；HTML 正文、内嵌图（`--attach-inline` + `cid:`）与服务器草稿（`--save-draft`）走同一套门禁，星标管理、移入回收站、文件夹整理也都有 dry-run 与人工确认兜底。
+- **安全发送** —— 发信走收件人白名单 + 人工键入确认，每次一封；HTML 正文、内嵌图（`--attach-inline` + `cid:`）与服务器草稿（`--save-draft`）走同一套门禁，星标管理、移入回收站、文件夹整理也都有 dry-run 与人工确认兜底。信任边界内的例行发送可选开启 `auto_send`，让 Agent 在白名单内自动完成（黑名单与每日限额兜底）。
 
-## v0.4.0 做了什么
+## 相对上游做了什么
 
-这是本 fork 相对上游的主要增量（上游停在 0.3.0-dev 的读取内核 + 门禁清理 + 白名单发送）：
+本 fork 相对上游（停在 0.3.0-dev 的读取内核 + 门禁清理 + 白名单发送）的全部增量：
+
+### v0.4.0（已发布）
 
 - **服务端关键词检索** —— `search --server` 按正文检索，无需先建索引；检索方言经真实服务器实测落档（QQ 静默忽略 `TEXT`，定案 `BODY`，见 [docs/compat/qq-20261006.md](docs/compat/qq-20261006.md)）。
 - **信封过滤补全** —— `envelope list --before/--to`，与既有 `--since/--from/--subject` 组合成时间窗。
@@ -86,6 +89,13 @@ $ qqmail-cli message show "m1_eyJmIjoiSU5CT1giLCJ2IjoxNDI1LCJ1Ijo4MzQ3fQ" \
 - **服务器草稿** —— `--save-draft` 把 send/reply/forward 的完成动作从 SMTP 提交换成存草稿箱，不经发送门禁、但仍需人工确认。
 - **内嵌图读取闭环** —— `multipart/related` 邮件的 CID 图片可列出、可下载、转发不丢图。
 - **可验证的诚实** —— QQ 搜索方言与草稿箱位置来自只读探针实测（[spikes/imap-dialect-probe](spikes/imap-dialect-probe/)），结论落档 `docs/compat/`；文件夹名编码修正为 RFC 3501 Modified UTF-7 并与 go-imap 序列化器做了差分验证。
+
+### v0.4.0 之后（已在 main，未发版）
+
+- **Agent 自动发送（autosend）** —— 账号配置 `auto_send = true` 后，allowlist 内的发送由 Agent 直接完成（跳过 TTY 确认）；`send_blacklist` 中的地址永不自动发送（回落完整人工门禁）；`daily_auto_limit` 每日限额（默认 50 封）+ 内容无关审计兜底。**三条线没有松动**：allowlist 之外发不出去、Agent 改不了任何名单、`QQMAIL_CLI_READONLY=1` 仍然一键全停。
+- **`--draft-file`** —— TOML 草稿文件承载整封信（to/subject/body/attach/format），Agent 生成草稿不再与 shell 引号搏斗；未知键名会被报错点名，拼错不会静默缺内容。
+- **确认 token 大小写不敏感** —— 交互确认键入 `send` 即可（y/ok 仍然拒绝）。
+- **内嵌图 Content-ID 域名** —— 改用发件人域名，发出邮件的头与真人邮件无差异。
 
 ## 为什么是 qqmail-cli
 
@@ -236,6 +246,7 @@ Agent 集成三件套：
 - **批量读**：先 `envelope list` 一次，再把所有要读的 id 交给**一次** `message show`——每次 CLI 调用就是一次 IMAP 登录，高频登录会触发 QQ 风控。
 - **可重试才重试**：`error.retryable` 为 true 才可重试（指数退避，至多两次）；退出码 30（限流）立即停手等 10–15 分钟；50（policy_denied）代表安全门禁在工作，需要的是人而不是重试。
 - **v0.4 起 Agent 能经同一套门禁做更多**：星标管理（`message flag`）、移入回收站（`message trash`）、文件夹整理（`folder create`/`rename`）、服务器端检索（`search --server`）、存服务器草稿（`--save-draft`）、内嵌图发送（`--attach-inline` + `cid:`）——写命令默认 dry-run，`agent-info` 与 `schema <command>` 随时可查风险级别与输出契约。
+- **自动发送（可选）**：账号配置 `auto_send = true` 后，Agent 对 allowlist 内收件人的发送不再需要终端确认（黑名单回落人工、每日限额封顶、全程审计）；整封信可写入 TOML 草稿文件，用 `send --draft-file mail.toml --execute` 一参调用。
 - **发送闭环（需人显式开启）**：账号配置开启 `auto_send` 后，Agent 可用 `send --draft-file` 完成 allowlist 内、黑名单之外的自动发送（受每日限额约束）；收件人命中黑名单即回落 TTY 门禁，readonly 永远优先，allowlist/blacklist 没有 CLI 改写路径。
 
 ## 安全模型
@@ -298,7 +309,7 @@ Agent 集成三件套：
 <details>
 <summary><b>这个 fork 和上游是什么关系？</b></summary>
 
-本仓库 fork 自 <a href="https://github.com/situker/qqmail-cli">situker/qqmail-cli</a>。上游作者司徒K 完成了 v0.1–v0.3 的全部设计（只读内核、门禁清理、白名单发送）与整个安全架构，这份基础与设计原则在 fork 中原样保留并持续遵守。上游暂停在 <code>0.3.0-dev</code> 后，本 fork 继续开发并发布 v0.4.0（能力清单见<a href="#v040-做了什么">上文</a>）。安全模型与门禁纪律没有放松，新增功能全部通过同一套守卫测试。随时欢迎上游合并本 fork 的改动。
+本仓库 fork 自 <a href="https://github.com/situker/qqmail-cli">situker/qqmail-cli</a>。上游作者司徒K 完成了 v0.1–v0.3 的全部设计（只读内核、门禁清理、白名单发送）与整个安全架构，这份基础与设计原则在 fork 中原样保留并持续遵守。上游暂停在 <code>0.3.0-dev</code> 后，本 fork 继续开发：发布 v0.4.0，并在 main 上加入 Agent 自动发送与草稿文件能力（差异清单见<a href="#相对上游做了什么">上文</a>）。安全模型与门禁纪律没有放松，新增功能全部通过同一套守卫测试。随时欢迎上游合并本 fork 的改动。
 </details>
 
 ## 同类项目
@@ -308,7 +319,7 @@ Agent 集成三件套：
 
 ## 项目状态
 
-代码版本 `0.4.0`（[Release](https://github.com/sixiang-world/qqmail-cli/releases/tag/v0.4.0)），覆盖只读内核（v0.1）、本地索引与门禁清理（v0.2）、白名单发送（v0.3）、服务端检索与写动词/发送面补全（v0.4）四个阶段的能力面。截至 2026-10-07：全量单元与集成测试、静态守卫、漏洞扫描、PowerShell 5.1 冒烟、六平台构建全部通过；真实 QQ 服务器的只读行为观察（搜索方言定案、草稿箱解析、畸形 MIME 记录）见[兼容性记录](docs/compat/README.md)。发布节奏见 [CHANGELOG](CHANGELOG.md)。
+代码版本 `0.4.0`（[Release](https://github.com/sixiang-world/qqmail-cli/releases/tag/v0.4.0)），覆盖只读内核（v0.1）、本地索引与门禁清理（v0.2）、白名单发送（v0.3）、服务端检索与写动词/发送面补全（v0.4）四个阶段的能力面。截至 2026-10-07：全量单元与集成测试、静态守卫、漏洞扫描、PowerShell 5.1 冒烟、六平台构建全部通过；真实 QQ 服务器的只读行为观察（搜索方言定案、草稿箱解析、畸形 MIME 记录）见[兼容性记录](docs/compat/README.md)。v0.4.0 之后 main 又加入 Agent 自动发送与草稿文件能力（未发版，见 [CHANGELOG](CHANGELOG.md) Unreleased 分节）。
 
 ## 参与贡献
 
