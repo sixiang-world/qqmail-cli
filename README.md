@@ -17,7 +17,7 @@
 > **本仓库是 [situker/qqmail-cli](https://github.com/situker/qqmail-cli) 的活跃 fork。**
 > 上游作者司徒K 的版本停在 `0.3.0-dev`（标签 v0.1.0）；本仓库在其基础上持续开发：已发布
 > **v0.4.0**（服务端关键词检索、星标/回收站/文件夹管理、HTML 与内嵌图发送、服务器草稿等
-> 12 项功能补全），此后又加入 **Agent 自动发送（autosend）** 与 **草稿文件（--draft-file）**
+> 12 项功能补全），此后发布 **v0.5.0**——**Agent 自动发送（autosend）** 与 **草稿文件（--draft-file）**
 > 能力。完整差异清单见 [相对上游做了什么](#相对上游做了什么)。上游署名按 [NOTICE](NOTICE) 完整保留，
 > 项目原设计原则与全部安全门禁一脉相承。
 >
@@ -319,7 +319,7 @@ Agent 集成三件套：
 
 ## 项目状态
 
-代码版本 `0.5.0-dev`（[v0.4.0](https://github.com/sixiang-world/qqmail-cli/releases/tag/v0.4.0) 已发布），覆盖只读内核（v0.1）、本地索引与门禁清理（v0.2）、白名单发送（v0.3）、能力面补全（v0.4）、Agent 自动发送与草稿文件（v0.5-dev）五个阶段的能力面。截至 2026-10-07：全量单元与集成测试、静态守卫、漏洞扫描、PowerShell 5.1 冒烟、六平台构建全部通过；真实 QQ 服务器的只读行为观察（搜索方言定案、草稿箱解析、畸形 MIME 记录）见[兼容性记录](docs/compat/README.md)。Agent 自动发送与草稿文件能力已在 main（`0.5.0-dev`，见 [CHANGELOG](CHANGELOG.md) Unreleased 分节）。
+代码版本 `0.5.0`（[Release](https://github.com/sixiang-world/qqmail-cli/releases/tag/v0.5.0)），覆盖只读内核（v0.1）、本地索引与门禁清理（v0.2）、白名单发送（v0.3）、能力面补全（v0.4）、Agent 自动发送与草稿文件（v0.5）五个阶段的能力面。截至 2026-10-07：全量单元与集成测试、静态守卫、漏洞扫描、PowerShell 5.1 冒烟、六平台构建全部通过；真实 QQ 服务器的只读行为观察（搜索方言定案、草稿箱解析、畸形 MIME 记录）见[兼容性记录](docs/compat/README.md)。Agent 自动发送与草稿文件能力随 v0.5.0 发布（见 [CHANGELOG](CHANGELOG.md) 0.5.0 分节）。
 
 ## 参与贡献
 

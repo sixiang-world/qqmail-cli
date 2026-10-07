@@ -4,6 +4,10 @@ All notable development changes are recorded here. Formal releases remain owner-
 
 ## Unreleased
 
+(nothing yet)
+
+## 0.5.0 — 2026-10-07
+
 ### Added (2026-10-07 autosend round)
 
 - `send --draft-file <letter.toml>`: compose the whole letter from a TOML

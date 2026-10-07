@@ -17,7 +17,7 @@
 > **This repository is an active fork of [situker/qqmail-cli](https://github.com/situker/qqmail-cli).**
 > The upstream author's version stopped at `0.3.0-dev` (tag v0.1.0); this fork continues development:
 > it shipped **v0.4.0** (twelve feature completions — server-side keyword search, star/trash/folder
-> management, HTML and inline-image sending, server-side drafts) and has since added **agent-driven
+> management, HTML and inline-image sending, server-side drafts) and has shipped **v0.5.0** — **agent-driven
 > auto-sending** (`auto_send` within the allowlist, with a blacklist and a daily cap) and
 > **`--draft-file`** (compose from a TOML file). Upstream attribution is preserved in [NOTICE](NOTICE),
 > and every security gate from the original design carries over unchanged.
@@ -306,7 +306,7 @@ Not supported, by design. qqmail-cli's entire value proposition is doing one pro
 
 ## Project status
 
-Source version `0.5.0-dev` ([v0.4.0](https://github.com/sixiang-world/qqmail-cli/releases/tag/v0.4.0) released), covering five stages: the read-only core (v0.1), local indexing with gated cleanup (v0.2), allowlisted sending (v0.3), the v0.4 completion round — server-side keyword search (body match, per the archived dialect probe), envelope `--before/--to`, star/trash/folder management, `--reply-all`, `--body-format html`, `--attach-inline`, and `--save-draft`. As of 2026-10-07, the complete unit and integration suites, static guards, vulnerability scans, the PowerShell 5.1 smoke test, and six-platform builds all pass; timestamped read-only observations against real QQ servers (including the search-dialect verdict and drafts-folder resolution) live in the [compatibility records](docs/compat/README.md). agent-driven auto-sending and draft files are on main as `0.5.0-dev` (see the [CHANGELOG](CHANGELOG.md) Unreleased section).
+Source version `0.5.0` ([release](https://github.com/sixiang-world/qqmail-cli/releases/tag/v0.5.0)), covering five stages: the read-only core (v0.1), local indexing with gated cleanup (v0.2), allowlisted sending (v0.3), the v0.4 completion round — server-side keyword search (body match, per the archived dialect probe), envelope `--before/--to`, star/trash/folder management, `--reply-all`, `--body-format html`, `--attach-inline`, and `--save-draft`. As of 2026-10-07, the complete unit and integration suites, static guards, vulnerability scans, the PowerShell 5.1 smoke test, and six-platform builds all pass; timestamped read-only observations against real QQ servers (including the search-dialect verdict and drafts-folder resolution) live in the [compatibility records](docs/compat/README.md). agent-driven auto-sending and draft files shipped in v0.5.0.
 
 ## Contributing
 
