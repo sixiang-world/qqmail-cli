@@ -24,6 +24,12 @@ type Account struct {
 	SMTPHost      string   `toml:"smtp_host,omitempty" json:"smtp_host"`
 	SMTPPort      int      `toml:"smtp_port,omitempty" json:"smtp_port"`
 	SendAllowlist []string `toml:"send_allowlist,omitempty" json:"send_allowlist"`
+	// Autosend settings (edited by hand in config.toml; the CLI has no command
+	// that writes them). DailyAutoLimit ≤0 is normalized to the 50-per-day
+	// default when the account is resolved into Named.
+	AutoSend       bool     `toml:"auto_send,omitempty" json:"auto_send,omitempty"`
+	SendBlacklist  []string `toml:"send_blacklist,omitempty" json:"send_blacklist,omitempty"`
+	DailyAutoLimit int      `toml:"daily_auto_limit,omitempty" json:"daily_auto_limit,omitempty"`
 }
 
 func (a Account) Host() string {
@@ -68,7 +74,12 @@ type Named struct {
 	SMTPHost      string   `json:"smtp_host"`
 	SMTPPort      int      `json:"smtp_port"`
 	SendAllowlist []string `json:"send_allowlist"`
-	IsDefault     bool     `json:"is_default"`
+	AutoSend      bool     `json:"auto_send"`
+	// SendBlacklist holds the addresses autosend must never fire for; hits
+	// fall back to the interactive TTY gate.
+	SendBlacklist  []string `json:"send_blacklist"`
+	DailyAutoLimit int      `json:"daily_auto_limit"`
+	IsDefault      bool     `json:"is_default"`
 }
 
 func DefaultPath() (string, error) {
@@ -194,7 +205,13 @@ func (c *Config) Resolve(name string) (Named, error) {
 	if smtpPort == 0 {
 		smtpPort = 465
 	}
-	return Named{Name: name, Email: value.Email, IMAPHost: value.Host(), IMAPPort: value.Port(), SMTPHost: smtpHost, SMTPPort: smtpPort, SendAllowlist: append([]string(nil), value.SendAllowlist...), IsDefault: name == c.DefaultAccount}, nil
+	dailyAutoLimit := value.DailyAutoLimit
+	if dailyAutoLimit <= 0 {
+		// A missing or non-positive limit always means the 50-per-day default;
+		// there is no "0 = unlimited" reading.
+		dailyAutoLimit = 50
+	}
+	return Named{Name: name, Email: value.Email, IMAPHost: value.Host(), IMAPPort: value.Port(), SMTPHost: smtpHost, SMTPPort: smtpPort, SendAllowlist: append([]string(nil), value.SendAllowlist...), AutoSend: value.AutoSend, SendBlacklist: append([]string(nil), value.SendBlacklist...), DailyAutoLimit: dailyAutoLimit, IsDefault: name == c.DefaultAccount}, nil
 }
 
 func (c *Config) List() []Named {
