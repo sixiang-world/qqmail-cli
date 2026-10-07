@@ -65,7 +65,7 @@
 - 计数器：本地状态文件（配置目录下 `autosend-state.json`：`{"date":"2006-01-02","count":N}`，跨日自动归零）。**不写进审计、不进输出**（硬约束 1）。
 - 输出：与人工发送**逐字段一致**（无 "auto" 标记、无新字段）。
 - 审计：内容无关 JSONL 照旧，动作不变。
-- 配置解析：AutoSend bool `toml:"auto_send"`、SendBlacklist []string `toml:"send_blacklist"`、DailyAutoLimit int `toml:"daily_auto_limit"`（默认 50；显式 0 视为 1?——否：0 非法，config 校验拒绝 ≤0 的显式取值，避免"0=无限"歧义）。
+- 配置解析：AutoSend bool `toml:"auto_send"`、SendBlacklist []string `toml:"send_blacklist"`、DailyAutoLimit int `toml:"daily_auto_limit"`（默认 50；缺省或 ≤0 一律按 50 处理，无"0=无限"歧义，亦无独立校验路径）。
 - 不变量（守卫测试钉死）：
   - autosend 开启下：allowlist 未命中 → policy_denied（不变量 1）。
   - readonly + autosend → 一切写仍被拒（不变量 2）。
@@ -75,11 +75,13 @@
   - allowlist/blacklist 无 CLI 变更路径（不变量 6——现状即如此：CLI 无任何改写两名单的命令；config 只由人工编辑；不做形式化守卫，文档声明）。
 - TTY 细节：autosend 命中时根本不提示、不读 stdin；黑名单/autosend 关闭时照旧走 `confirmToken`（此时 F2 的大小写不敏感生效）。
 
-## 4. F4 — 暴露面清零：Message-ID / Content-ID 域名 = 发件人域名
+## 4. F4 — 暴露面清零：Content-ID 域名 = 发件人域名
 
-- 现状指纹：`Message-ID: <hex@qqmail-cli.local>`、内嵌图 `Content-Id: <文件名@qqmail-cli.local>`——`qqmail-cli.local` 域名在"显示原文"里可见，是唯一的机器指纹（已核对：无 X-Mailer/UA，其余头均为常规形态）。
-- 修法：`newMessageID(from)` 与 `deriveInlineContentID` 的域名部分改用 **From 地址的域名**（如 shiyuqwq@qq.com → `<hex@qq.com>`、`<文件名@qq.com>`）。这与真人客户端惯例一致（RFC 5322 允许发件方域名），不伪造 QQ 内部专有格式。
-- 传播面：`message_golden_test.go`（Message-ID 掩码方式核对/更新）、Task 11 的 Content-ID 断言（`@qqmail-cli.local` → `@qq.com` 形态）、send_test.go 的 cid 断言、message_test.go 的 `TestNewContentID`（已删）无影响、USER_GUIDE/SKILL.md 的 cid 教学（`cid:<文件名@qq.com>`，按账号域名泛化表述）、README 如有引用。
+（2026-10-07 计划前核查修正：`newMessageID` 本就取发件人域名——message.go:516-519，Message-ID 对 qq.com 发件人已是 `<hex@qq.com>`，无指纹。真正的指纹只有内嵌图 Content-ID。）
+
+- 现状指纹：内嵌图 `Content-Id: <文件名@qqmail-cli.local>`（deriveInlineContentID 硬编码该域名）——在"显示原文"里可见（已核对：无 X-Mailer/UA，其余头均为常规形态；Message-ID 已合规）。
+- 修法：`deriveInlineContentID` 增加域名参数（取 From 地址 `@` 后部分，如 shiyuqwq@qq.com → `<文件名@qq.com>`），与真人客户端惯例一致（RFC 5322 允许发件方域名）。`newMessageID` 不动。
+- 传播面：Task 11 的 Content-ID 断言（`@qqmail-cli.local` → 发件人域名形态）、send_test.go 的 cid 断言、USER_GUIDE/SKILL.md 的 cid 教学（`cid:<文件名@发件人域名>`）、README 如有引用。golden 不受影响（Message-ID 本就合规，掩码不动）。
 - `qqmail-cli.local` 字符串全仓清零（grep 验证）。
 - formatMessageID 的 Trim+wrap 逻辑不变。
 
