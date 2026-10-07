@@ -4,6 +4,37 @@ All notable development changes are recorded here. Formal releases remain owner-
 
 ## Unreleased
 
+(nothing yet)
+
+## 0.4.0 — 2026-10-07
+
+### Changed (2026-10-07 follow-up round)
+
+- `search --server` matches message bodies: the 2026-10-07 dialect probe
+  (docs/compat/qq-20261006.md) recorded QQ silently ignoring the `TEXT`
+  criterion (a nonsense term returned the full mailbox with OK), so
+  `ServerSearchField` is settled to `BODY` and `meta.search_mode` reports
+  `server_body`.
+- Mailbox-name encoding now implements RFC 3501 modified UTF-7 directly,
+  pinned byte-for-byte to go-imap's serializer (the previous helper emitted
+  RFC 2152 '+'-shift form); the cention-sany dependency left the direct
+  requirement set.
+- Folder create/rename emit the family-standard `*_attempt` audit record.
+- `--attach-inline` derives Content-IDs from file names so `cid:` references
+  resolve as documented.
+- The AST mutation tripwire is unconditional again (folder policy wrappers
+  renamed to `CreateMailbox`/`RenameMailbox`).
+- Envelope client_window fallback is symmetric for `--to` and enforces
+  `--before` client-side; forward over the combined 20 MiB cap reports
+  exit 50 like send.
+
+### Added (2026-10-07 follow-up round)
+
+- `spikes/imap-dialect-probe`: read-only dialect probe (search criteria,
+  drafts folder); conclusions in docs/compat/qq-20261006.md.
+- Schema-vs-output contract tests for the five v0.4 mutation schemas;
+  readonly matrix covers reply/forward `--save-draft` and `flag --remove`.
+
 ### Added (0.4.0 feature-completion round)
 
 - `envelope list --before` / `--to`: two new server-side envelope criteria —
