@@ -39,6 +39,7 @@ type composeOptions struct {
 	BodyFormat   string
 	Attachments  []string
 	AttachInline []string
+	DraftFile    string
 	Execute      bool
 	SaveDraft    bool
 }
@@ -57,8 +58,40 @@ var messageIDPattern = regexp.MustCompile(`<([^<>\s]+)>`)
 func newSendCommand(rt *Runtime) *cobra.Command {
 	var opts composeOptions
 	cmd := &cobra.Command{Use: "send", Short: "Compose mail; dry-run unless --execute is allowlisted and confirmed", Args: cobra.NoArgs}
-	addComposeFlags(cmd, &opts, true, true)
+	// --to/--subject are validated in RunE instead of via MarkFlagRequired:
+	// with --draft-file the letter comes from the TOML file, and cobra's
+	// required-flag check would fire before RunE could see the flag.
+	addComposeFlags(cmd, &opts, false, false)
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+		if opts.DraftFile != "" {
+			if err := rejectComposeFlagConflicts(cmd); err != nil {
+				return err
+			}
+			if opts.Execute {
+				if err := policy.RequireMutationAllowed(); err != nil {
+					return err
+				}
+			}
+			named, err := loadNamedAccount(rt)
+			if err != nil {
+				return err
+			}
+			df, err := loadDraftFile(opts.DraftFile)
+			if err != nil {
+				return err
+			}
+			draft, err := draftFromDraftFile(named, df)
+			if err != nil {
+				return err
+			}
+			return runDraft(rt, cmd, named, draft, opts.Execute, opts.SaveDraft)
+		}
+		if !cmd.Flags().Changed("to") {
+			return &errmap.Error{Kind: errmap.Usage, Message: "缺少必填参数 --to", Suggestion: "或改用 --draft-file 从 TOML 草稿文件装配整封信"}
+		}
+		if !cmd.Flags().Changed("subject") {
+			return &errmap.Error{Kind: errmap.Usage, Message: "缺少必填参数 --subject", Suggestion: "或改用 --draft-file 从 TOML 草稿文件装配整封信"}
+		}
 		if err := validateBodyFormat(opts.BodyFormat); err != nil {
 			return err
 		}
@@ -87,6 +120,9 @@ func newReplyCommand(rt *Runtime) *cobra.Command {
 	addComposeFlags(cmd, &opts, false, false)
 	cmd.Flags().BoolVar(&replyAll, "reply-all", false, "also address the original To/Cc recipients (minus your own address)")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if opts.DraftFile != "" {
+			return rejectDraftFileForThreadedCommand("reply")
+		}
 		if err := validateBodyFormat(opts.BodyFormat); err != nil {
 			return err
 		}
@@ -178,6 +214,9 @@ func newForwardCommand(rt *Runtime) *cobra.Command {
 	cmd := &cobra.Command{Use: "forward <id>", Args: cobra.ExactArgs(1), Short: "Forward a quoted message and its attachments; dry-run by default"}
 	addComposeFlags(cmd, &opts, true, false)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if opts.DraftFile != "" {
+			return rejectDraftFileForThreadedCommand("forward")
+		}
 		if err := validateBodyFormat(opts.BodyFormat); err != nil {
 			return err
 		}
@@ -277,6 +316,7 @@ func addComposeFlags(cmd *cobra.Command, opts *composeOptions, requireTo, requir
 	cmd.Flags().StringVar(&opts.BodyFormat, "body-format", "", "body format: text (default) or html; html is sent verbatim as the text/html part of a multipart/alternative and is never sanitized")
 	cmd.Flags().StringSliceVar(&opts.Attachments, "attach", nil, "attachment paths (20 MiB combined maximum)")
 	cmd.Flags().StringSliceVar(&opts.AttachInline, "attach-inline", nil, "inline image paths referenced by cid: from the HTML body; requires --body-format html (shares the 20 MiB combined maximum with --attach)")
+	cmd.Flags().StringVar(&opts.DraftFile, "draft-file", "", "compose the letter from a TOML draft file (to/cc/bcc/subject/format/body/body_file/attach/attach_inline); mutually exclusive with the compose flags, combinable with --execute and --save-draft; paths resolve from the current directory")
 	cmd.Flags().BoolVar(&opts.Execute, "execute", false, "send after allowlist validation and TTY confirmation")
 	cmd.Flags().BoolVar(&opts.SaveDraft, "save-draft", false, "append the built message to the server drafts folder (\\Draft) under mutation gates instead of sending; dry-run unless --execute is confirmed")
 	if requireTo {
