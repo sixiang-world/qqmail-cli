@@ -301,9 +301,7 @@ func parseListLine(line string) (attrs []string, rawName string, ok bool) {
 	if open < 0 || close < open {
 		return nil, "", false
 	}
-	for _, field := range strings.Fields(line[open+1 : close]) {
-		attrs = append(attrs, field)
-	}
+	attrs = append(attrs, strings.Fields(line[open+1:close])...)
 	rest := strings.TrimSpace(line[close+1:])
 	// Skip the hierarchy delimiter (quoted or atom).
 	if strings.HasPrefix(rest, `"`) {
