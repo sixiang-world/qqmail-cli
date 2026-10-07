@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -393,9 +394,20 @@ func runDraft(rt *Runtime, cmd *cobra.Command, named account.Named, draft sendma
 	if len(summary.DeniedRecipients) > 0 {
 		return &errmap.Error{Kind: errmap.PolicyDenied, Message: "至少一个收件人不在白名单中，拒绝整封邮件", Context: map[string]any{"denied_recipients": summary.DeniedRecipients}}
 	}
-	printDraftSummary(rt.Err, summary)
-	if err := confirmToken(rt, "SEND"); err != nil {
-		return err
+	// Autosend decision point: readonly and the allowlist were already
+	// enforced above, so autosend can only ever skip the TTY inside the
+	// allowlist. A blacklisted recipient (or autosend off) falls back to the
+	// full interactive gate below; the daily cap is a policy denial.
+	recipients := sendmail.Recipients(draft)
+	auto, autoErr := autoSendEligible(named, recipients, time.Now())
+	if autoErr != nil {
+		return autoErr
+	}
+	if !auto {
+		printDraftSummary(rt.Err, summary)
+		if err := confirmToken(rt, "SEND"); err != nil {
+			return err
+		}
 	}
 	authCode, err := sendCredential(rt, named)
 	if err != nil {
@@ -411,6 +423,14 @@ func runDraft(rt *Runtime, cmd *cobra.Command, named account.Named, draft sendma
 	service := policy.NewMailService(rt.SendMail, store)
 	if err := service.Send(ctx, named, authCode, draft, raw, commandName(cmd)); err != nil {
 		return err
+	}
+	if auto {
+		// Only auto sends count against the daily quota, and a counter
+		// failure never masks the successful send — a sanitized hint on
+		// stderr is the whole surface.
+		if err := bumpAutoSendCount(time.Now()); err != nil {
+			_, _ = fmt.Fprintf(rt.Err, "自动发送计数更新失败：%s\n", output.SanitizeHuman(err.Error()))
+		}
 	}
 	data["sent"] = true
 	if rt.JSON {
