@@ -4,7 +4,8 @@
 
 **敢把 QQ 邮箱交给脚本和 AI Agent 的命令行工具。**
 
-[![CI](https://github.com/situker/qqmail-cli/actions/workflows/ci.yaml/badge.svg)](https://github.com/situker/qqmail-cli/actions/workflows/ci.yaml)
+[![CI](https://github.com/sixiang-world/qqmail-cli/actions/workflows/ci.yaml/badge.svg)](https://github.com/sixiang-world/qqmail-cli/actions/workflows/ci.yaml)
+[![Release](https://img.shields.io/github/v/release/sixiang-world/qqmail-cli)](https://github.com/sixiang-world/qqmail-cli/releases)
 [![Go](https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go&logoColor=white)](go.mod)
 [![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
@@ -12,24 +13,17 @@
 
 </div>
 
-> qqmail-cli 是独立的第三方开源项目，与腾讯及 QQ 邮箱不存在隶属、合作或官方授权关系；项目通过用户主动开启的标准 IMAP/SMTP 服务工作。与 qmail 生态的 qmailctl 工具无任何关联。
+> [!IMPORTANT]
+> **本仓库是 [situker/qqmail-cli](https://github.com/situker/qqmail-cli) 的活跃 fork。**
+> 上游作者司徒K 的版本停在 `0.3.0-dev`（标签 v0.1.0）；本仓库在其基础上继续开发并发布
+> **v0.4.0**——服务端关键词检索、星标/回收站/文件夹管理、HTML 与内嵌图发送、服务器草稿等
+> 12 项功能补全（见 [v0.4.0 亮点](#v040-做了什么)）。上游署名按 [NOTICE](NOTICE) 完整保留，
+> 项目原设计原则与全部安全门禁一脉相承。
+>
+> qqmail-cli 是独立的第三方开源项目，与腾讯及 QQ 邮箱不存在隶属、合作或官方授权关系；
+> 项目通过用户主动开启的标准 IMAP/SMTP 服务工作。与 qmail 生态的 qmailctl 工具无任何关联。
 
 qqmail-cli 是一个安全优先的 QQ 邮箱 CLI：读信、检索、分类、备份、带门禁的清理和白名单发送，全部走稳定 JSON 契约。它解决的不是"能不能连上邮箱"，而是连上之后的那些事——凭证会不会泄露、Agent 会不会误删邮件、邮件正文会不会反过来指挥 Agent。
-
-<div align="center">
-
-### 👤 关于作者
-
-**司徒K** &nbsp;·&nbsp; 持续创业者，长期主义践行者
-
-[![公众号：司徒K](https://img.shields.io/badge/公众号-司徒K-07C160?style=for-the-badge&logo=wechat&logoColor=white)](https://www.situking.com)
-&nbsp;
-[![个人网站：situking.com](https://img.shields.io/badge/个人网站-www.situking.com-1E4B8F?style=for-the-badge&logo=googlechrome&logoColor=white)](https://www.situking.com)
-
-觉得这个项目有用，欢迎点个 ⭐ Star。<br/>
-想聊 AI 落地、skill/agent 工程或这个项目的设计取舍，公众号和网站都能找到我。
-
-</div>
 
 ```console
 $ qqmail-cli envelope list --unread --limit 2 --json
@@ -68,18 +62,30 @@ $ qqmail-cli message show "m1_eyJmIjoiSU5CT1giLCJ2IjoxNDI1LCJ1Ijo4MzQ3fQ" \
 
 （示例由真实运行输出生成并通过项目自身 schema 校验；实际输出为单行紧凑 JSON，此处为阅读排版。）一次列信封、一次批量读全文，`id` 是不透明 token，原样复制即可；读取全程 `EXAMINE` + `BODY.PEEK`——服务器上的未读状态碰都不碰。
 
+## 目录
+
+[它能帮你做什么](#它能帮你做什么) · [v0.4.0 做了什么](#v040-做了什么) · [为什么是 qqmail-cli](#为什么是-qqmail-cli) · [什么时候不该用它](#什么时候不该用它) · [安装](#安装) · [五分钟上手](#五分钟上手) · [常用工作流](#常用工作流) · [给 AI Agent 用](#给-ai-agent-用) · [安全模型](#安全模型) · [FAQ](#faq) · [项目状态](#项目状态) · [参与贡献](#参与贡献) · [致谢与许可](#致谢与许可)
+
 ## 它能帮你做什么
 
 - **整理邮箱** —— 把成千上万封邮件按发件人、类别、时间归堆，一眼看清谁在给你发垃圾。
 - **清理垃圾邮件** —— 规则挑出营销和通知邮件，先本地全量备份、你亲手确认，再移入回收站；删错了 `restore` 一条命令整单找回，本地备份永久兜底。
 - **备份存档** —— 把邮件导出成本地 `.eml` 文件，带哈希校验，随时可验证完整性。
-- **本地检索** —— 把邮箱建成本地索引，全文搜索（含中文）比网页版快，且全程不联网；没建索引的邮箱还能让服务器直接检索（`search --server`）。
+- **本地与服务端检索** —— 本地 FTS5 全文索引（含中文）比网页版快且不联网；没建索引的邮箱让服务器直接搜（`search --server`，按正文匹配）。
 - **交给 AI Agent** —— 让 AI 帮你读信、提行动项、起草回复；但读是读、删是删、发是发，删除和发送权牢牢卡在你的人工确认里。
-- **安全发送** —— 发信走收件人白名单 + 人工键入确认，每次一封，绝不失控群发；HTML 正文、内嵌图（`--attach-inline` + `cid:`）与存服务器草稿（`--save-draft`）走同一套门禁，星标管理、移入回收站和文件夹整理也都有 dry-run 与人工确认兜底。
+- **安全发送** —— 发信走收件人白名单 + 人工键入确认，每次一封；HTML 正文、内嵌图（`--attach-inline` + `cid:`）与服务器草稿（`--save-draft`）走同一套门禁，星标管理、移入回收站、文件夹整理也都有 dry-run 与人工确认兜底。
 
-## 文档直达
+## v0.4.0 做了什么
 
-[五分钟上手](#五分钟上手) · [功能与设计全景](docs/OVERVIEW.md) · [完整使用手册](docs/USER_GUIDE.md) · [Agent 使用纪律](#给-ai-agent-用) · [安全模型](#安全模型) · [架构说明](docs/ARCHITECTURE.md) · [FAQ](#faq)
+这是本 fork 相对上游的主要增量（上游停在 0.3.0-dev 的读取内核 + 门禁清理 + 白名单发送）：
+
+- **服务端关键词检索** —— `search --server` 按正文检索，无需先建索引；检索方言经真实服务器实测落档（QQ 静默忽略 `TEXT`，定案 `BODY`，见 [docs/compat/qq-20261006.md](docs/compat/qq-20261006.md)）。
+- **信封过滤补全** —— `envelope list --before/--to`，与既有 `--since/--from/--subject` 组合成时间窗。
+- **写动词补全** —— `message mark-unread`、`message flag`（星标加/除）、`message trash`（单封移入回收站）、`folder create/rename`，全部走 dry-run → `--execute` → 真实 TTY 确认的门禁链。
+- **发送面补全** —— `--body-format html`（multipart/alternative，预览展示纯文本降级与转义源码摘要）、`--attach-inline`（内嵌图 + 自动 `cid:` 引用）、`reply --reply-all`。
+- **服务器草稿** —— `--save-draft` 把 send/reply/forward 的完成动作从 SMTP 提交换成存草稿箱，不经发送门禁、但仍需人工确认。
+- **内嵌图读取闭环** —— `multipart/related` 邮件的 CID 图片可列出、可下载、转发不丢图。
+- **可验证的诚实** —— QQ 搜索方言与草稿箱位置来自只读探针实测（[spikes/imap-dialect-probe](spikes/imap-dialect-probe/)），结论落档 `docs/compat/`；文件夹名编码修正为 RFC 3501 Modified UTF-7 并与 go-imap 序列化器做了差分验证。
 
 ## 为什么是 qqmail-cli
 
@@ -110,7 +116,7 @@ $ qqmail-cli message show "m1_eyJmIjoiSU5CT1giLCJ2IjoxNDI1LCJ1Ijo4MzQ3fQ" \
 
 ### 方式一：下载预编译二进制
 
-首个公开 Release 发布后，从 [GitHub Releases](https://github.com/situker/qqmail-cli/releases) 下载对应平台的归档：
+从 [GitHub Releases](https://github.com/sixiang-world/qqmail-cli/releases) 下载对应平台的归档（v0.4.0 起）：
 
 | 平台 | 架构 | 说明 |
 |---|---|---|
@@ -131,7 +137,7 @@ Windows 首次运行未签名程序会弹 SmartScreen 提示，属预期行为�
 需要 Go 1.25+，纯 Go 构建，无 CGO、无外部工具链：
 
 ```bash
-git clone https://github.com/situker/qqmail-cli.git
+git clone https://github.com/sixiang-world/qqmail-cli.git
 cd qqmail-cli
 CGO_ENABLED=0 go build -o bin/qqmail-cli ./cmd/qqmail-cli
 ```
@@ -139,7 +145,7 @@ CGO_ENABLED=0 go build -o bin/qqmail-cli ./cmd/qqmail-cli
 Windows PowerShell：
 
 ```powershell
-git clone https://github.com/situker/qqmail-cli.git
+git clone https://github.com/sixiang-world/qqmail-cli.git
 cd qqmail-cli
 $env:CGO_ENABLED = "0"
 go build -o .\bin\qqmail-cli.exe .\cmd\qqmail-cli
@@ -205,8 +211,8 @@ send_allowlist = ["you@example.com", "*@your-company.example"]
 
 ```text
 qqmail-cli send --to you@example.com --subject "主题" --body "正文"   # dry-run：完整展示信封
-qqmail-cli reply <id> --body "回复内容"                               # 自动带正确线程头
-qqmail-cli forward <id> --to you@example.com --body "转发说明"
+qqmail-cli reply <id> --reply-all --body "回复内容"                    # 自动带线程头；--reply-all 并入原收件人
+qqmail-cli forward <id> --to you@example.com --body "转发说明"         # 自动携带原邮件附件
 ```
 
 真实发送必须追加 `--execute`、全部收件人命中白名单、由人在真实 TTY 键入 `SEND`。每次调用最多一封。
@@ -221,11 +227,15 @@ $env:QQMAIL_CLI_READONLY = "1"    # 锁死一切写操作与发送；未知取�
 
 Agent 集成三件套：
 
-- `qqmail-cli agent-info` —— 机器可读的能力清单：全部命令与风险级别（read/mutate/destructive/send）、不可信字段路径、当前只读状态。
+- `qqmail-cli agent-info` —— 机器可读的能力清单：全部命令与风险级别（read/mutate/send）、不可信字段路径、当前只读状态。
 - `qqmail-cli schema <command>` —— 输出内嵌 JSON Schema，消费任何新形状前先自校验。
 - [`skills/qqmail-cli/SKILL.md`](skills/qqmail-cli/SKILL.md) —— 随仓分发的 Agent 技能文件，装完 CLI 即获得完整调用纪律（Claude Code 等 harness 直接可用）。
 
-关键纪律：先 `envelope list` 一次，再把所有要读的 id 交给**一次** `message show` 批量读取——每次 CLI 调用就是一次 IMAP 登录，高频登录会触发 QQ 风控。退出码语义化：`error.retryable` 为 true 才可重试（指数退避，至多两次）；退出码 30（限流）时立即停手等 10-15 分钟；50（policy_denied）代表安全门禁在工作，需要的是人而不是重试。0.4 起 Agent 还能经同一套门禁做星标管理（`message flag`）、移入回收站（`message trash`）、文件夹整理（`folder create`/`rename`）、服务器端检索（`search --server`）、存服务器草稿（`--save-draft`）与内嵌图发送（`--attach-inline` + `cid:`）——写命令默认 dry-run，只读命令即时执行——`agent-info` 与 `schema <command>` 随时可查新命令的风险级别与输出契约。
+关键纪律：
+
+- **批量读**：先 `envelope list` 一次，再把所有要读的 id 交给**一次** `message show`——每次 CLI 调用就是一次 IMAP 登录，高频登录会触发 QQ 风控。
+- **可重试才重试**：`error.retryable` 为 true 才可重试（指数退避，至多两次）；退出码 30（限流）立即停手等 10–15 分钟；50（policy_denied）代表安全门禁在工作，需要的是人而不是重试。
+- **v0.4 起 Agent 能经同一套门禁做更多**：星标管理（`message flag`）、移入回收站（`message trash`）、文件夹整理（`folder create`/`rename`）、服务器端检索（`search --server`）、存服务器草稿（`--save-draft`）、内嵌图发送（`--attach-inline` + `cid:`）——写命令默认 dry-run，`agent-info` 与 `schema <command>` 随时可查风险级别与输出契约。
 
 ## 安全模型
 
@@ -233,7 +243,7 @@ Agent 集成三件套：
 |---|---|---|
 | 凭证 | 系统凭据管理器；env 注入需显式 `--auth-code-env`；全通道脱敏 | 夹具授权码全输出扫描测试，含 panic 路径 |
 | 只读 | EXAMINE + PEEK；读接口白名单 | 接口反射测试 + 内存 IMAP 服务器行为断言 |
-| 写边界 | go-imap 写方法圈禁在单一文件、仅策略层可调 | go/ast 静态扫描跑在 CI |
+| 写边界 | go-imap 写方法圈禁在单一文件、仅策略层可调 | go/ast 静态扫描跑在 CI（无条件防护） |
 | 不可删 | 无永久删除命令；EXPUNGE/CLOSE 全域禁止 | AST 禁用表 + 协议线路断言 |
 | 清理门禁 | 备份 HMAC + 本地哈希 + 服务器逐封核对 + TTY 键入数量 | 门禁各失败分支表驱动测试 + 端到端测试 |
 | 发送门禁 | 白名单全员命中 + dry-run 默认 + TTY `SEND` + 单发一封 | 本地 TLS SMTP fixture 回归 |
@@ -284,6 +294,12 @@ Agent 集成三件套：
 不支持，也不打算支持。qqmail-cli 的价值主张就是把 QQ 邮箱一家做透：官方口径逐条查证、服务器方言逐条实测、中文场景逐条测试。多服务商需求推荐 <a href="https://github.com/pimalaya/himalaya">himalaya</a>。
 </details>
 
+<details>
+<summary><b>这个 fork 和上游是什么关系？</b></summary>
+
+本仓库 fork 自 <a href="https://github.com/situker/qqmail-cli">situker/qqmail-cli</a>。上游作者司徒K 完成了 v0.1–v0.3 的全部设计（只读内核、门禁清理、白名单发送）与整个安全架构，这份基础与设计原则在 fork 中原样保留并持续遵守。上游暂停在 <code>0.3.0-dev</code> 后，本 fork 继续开发并发布 v0.4.0（能力清单见<a href="#v040-做了什么">上文</a>）。安全模型与门禁纪律没有放松，新增功能全部通过同一套守卫测试。随时欢迎上游合并本 fork 的改动。
+</details>
+
 ## 同类项目
 
 - [himalaya](https://github.com/pimalaya/himalaya) —— Rust 生态成熟的多后端邮件 CLI，名词-动词命令树的代表作（本项目的命令语法向它看齐）。多服务商场景选它。
@@ -291,9 +307,9 @@ Agent 集成三件套：
 
 ## 项目状态
 
-代码版本 `0.4.0`，覆盖只读内核（v0.1）、本地索引与门禁清理（v0.2）、白名单发送（v0.3）、服务端检索与写动词/发送面补全（v0.4）四个阶段的能力面。截至 2026-10-07：全量单元与集成测试、静态守卫、漏洞扫描、PowerShell 5.1 冒烟、六平台 snapshot 构建全部通过；真实 QQ 服务器的只读行为观察（含搜索方言与草稿箱定案）见[兼容性记录](docs/compat/README.md)。正式 tag 与公开 Release 由维护者控制，节奏见 [CHANGELOG](CHANGELOG.md)。
+代码版本 `0.4.0`（[Release](https://github.com/sixiang-world/qqmail-cli/releases/tag/v0.4.0)），覆盖只读内核（v0.1）、本地索引与门禁清理（v0.2）、白名单发送（v0.3）、服务端检索与写动词/发送面补全（v0.4）四个阶段的能力面。截至 2026-10-07：全量单元与集成测试、静态守卫、漏洞扫描、PowerShell 5.1 冒烟、六平台构建全部通过；真实 QQ 服务器的只读行为观察（搜索方言定案、草稿箱解析、畸形 MIME 记录）见[兼容性记录](docs/compat/README.md)。发布节奏见 [CHANGELOG](CHANGELOG.md)。
 
-## 贡献
+## 参与贡献
 
 ```text
 go test ./...          # 全量测试（含只读守卫与契约测试）
@@ -302,8 +318,9 @@ golangci-lint run
 govulncheck ./...
 ```
 
-JSON 输出是稳定契约（`schema_version: "1"`，字段只增不删）；人读文本不是契约。提交前请读 [CONTRIBUTING.md](CONTRIBUTING.md)；安全问题请按 [SECURITY.md](SECURITY.md) 私密报告，不要开公开 Issue。测试夹具必须合成，仓库不接收任何真实邮件样本。
+JSON 输出是稳定契约（`schema_version: "1"`，字段只增不删）；人读文本不是契约。提交前请读 [CONTRIBUTING.md](CONTRIBUTING.md)；安全问题请按 [SECURITY.md](SECURITY.md) 私密报告，不要开公开 Issue。测试夹具必须合成，仓库不接收任何真实邮件样本。Issue 与 PR 请提到本仓库（[sixiang-world/qqmail-cli](https://github.com/sixiang-world/qqmail-cli)）。
 
-## 许可证
+## 致谢与许可
 
-[Apache License 2.0](LICENSE) · 版权与作者署名见 [NOTICE](NOTICE)（转发与二次分发须保留）
+- **项目原作者与上游维护者：[司徒K](https://github.com/situker)（[situking.com](https://www.situking.com)）** —— 本仓库 fork 自 [situker/qqmail-cli](https://github.com/situker/qqmail-cli)，v0.1–v0.3 的全部设计、安全架构与门禁体系出自上游，fork 中原样保留并持续遵守。想聊 AI 落地与 skill/agent 工程，上游作者的[公众号](https://www.situking.com)与[个人网站](https://www.situking.com)仍在更新。
+- [Apache License 2.0](LICENSE) · 版权与作者署名见 [NOTICE](NOTICE)（转发与二次分发须保留）。

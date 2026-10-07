@@ -335,7 +335,7 @@ func TestExecuteRejectsNonTTYBeforeMutationDial(t *testing.T) {
 func validateOutput(t *testing.T, filename string, raw []byte) {
 	t.Helper()
 	compiler := jsonschema.NewCompiler()
-	base := "https://github.com/situker/qqmail-cli/schemas/"
+	base := "https://github.com/sixiang-world/qqmail-cli/schemas/"
 	for _, name := range projectschemas.Names() {
 		document, err := projectschemas.Get(name)
 		if err != nil {

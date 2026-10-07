@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/situker/qqmail-cli/schemas/envelope-common.schema.json",
+  "$id": "https://github.com/sixiang-world/qqmail-cli/schemas/envelope-common.schema.json",
   "title": "qqmail-cli JSON envelope",
   "type": "object",
   "required": ["schema_version", "command", "ok", "data", "error", "warnings", "meta"],

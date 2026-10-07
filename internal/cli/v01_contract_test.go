@@ -104,7 +104,7 @@ func validateDocument(t *testing.T, schemaName string, raw []byte) {
 		t.Fatal(err)
 	}
 	compiler := jsonschema.NewCompiler()
-	resource := "https://github.com/situker/qqmail-cli/schemas/" + schemaName
+	resource := "https://github.com/sixiang-world/qqmail-cli/schemas/" + schemaName
 	if err := compiler.AddResource(resource, schemaValue); err != nil {
 		t.Fatal(err)
 	}

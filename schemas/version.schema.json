@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/situker/qqmail-cli/schemas/version.schema.json",
+  "$id": "https://github.com/sixiang-world/qqmail-cli/schemas/version.schema.json",
   "allOf": [
     {"$ref": "envelope-common.schema.json"},
     {

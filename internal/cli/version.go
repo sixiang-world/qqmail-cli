@@ -13,7 +13,7 @@ import (
 const (
 	Author     = "司徒K (Situ K)"
 	Homepage   = "https://www.situking.com"
-	Repository = "https://github.com/situker/qqmail-cli"
+	Repository = "https://github.com/sixiang-world/qqmail-cli"
 	License    = "Apache-2.0"
 )
 

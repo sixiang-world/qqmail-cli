@@ -6,7 +6,7 @@
 
 ### 从 Release 安装
 
-公开 Release 可用后，从 [GitHub Releases](https://github.com/situker/qqmail-cli/releases) 下载与系统对应的压缩包：
+公开 Release 可用后，从 [GitHub Releases](https://github.com/sixiang-world/qqmail-cli/releases) 下载与系统对应的压缩包：
 
 - Windows：`windows_amd64` 或 `windows_arm64`
 - macOS：`darwin_amd64` 或 `darwin_arm64`
@@ -19,7 +19,7 @@
 需要 Go 1.25 或更高版本：
 
 ```text
-git clone https://github.com/situker/qqmail-cli.git
+git clone https://github.com/sixiang-world/qqmail-cli.git
 cd qqmail-cli
 go build -o bin/qqmail-cli ./cmd/qqmail-cli
 ```

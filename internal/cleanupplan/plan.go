@@ -55,7 +55,7 @@ func Validate(raw []byte) error {
 		return err
 	}
 	compiler := jsonschema.NewCompiler()
-	const resource = "https://github.com/situker/qqmail-cli/schemas/plan.schema.json"
+	const resource = "https://github.com/sixiang-world/qqmail-cli/schemas/plan.schema.json"
 	if err := compiler.AddResource(resource, schemaValue); err != nil {
 		return err
 	}

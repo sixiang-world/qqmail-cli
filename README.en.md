@@ -4,7 +4,8 @@
 
 **The QQ Mail CLI that's actually safe to hand to your scripts and AI agents.**
 
-[![CI](https://github.com/situker/qqmail-cli/actions/workflows/ci.yaml/badge.svg)](https://github.com/situker/qqmail-cli/actions/workflows/ci.yaml)
+[![CI](https://github.com/sixiang-world/qqmail-cli/actions/workflows/ci.yaml/badge.svg)](https://github.com/sixiang-world/qqmail-cli/actions/workflows/ci.yaml)
+[![Release](https://img.shields.io/github/v/release/sixiang-world/qqmail-cli)](https://github.com/sixiang-world/qqmail-cli/releases)
 [![Go](https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go&logoColor=white)](go.mod)
 [![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
@@ -12,22 +13,30 @@
 
 </div>
 
+> [!IMPORTANT]
+> **This repository is an active fork of [situker/qqmail-cli](https://github.com/situker/qqmail-cli).**
+> The upstream author's version stopped at `0.3.0-dev` (tag v0.1.0); this fork continues development
+> and ships **v0.4.0** — twelve feature completions including server-side keyword search,
+> star/trash/folder management, HTML and inline-image sending, and server-side drafts (see the
+> [project status](#project-status)). Upstream attribution is preserved in [NOTICE](NOTICE), and
+> every security gate from the original design carries over unchanged.
+>
 > qqmail-cli is an independent third-party open-source project. It is not affiliated with, endorsed by, or authorized by Tencent or QQ Mail. It works exclusively through the standard IMAP/SMTP services that users enable themselves, and it is unrelated to the qmail ecosystem's qmailctl tool.
 
 qqmail-cli is a safety-first command-line client for QQ Mail: reading, searching, rule-based triage, verifiable backups, gated cleanup, and allowlisted sending — all through a stable, versioned JSON contract. It does not solve "can I connect to the mailbox"; it solves everything that comes after: whether credentials leak, whether an agent can destroy mail by accident, and whether a hostile email can turn around and steer the agent.
 
 <div align="center">
 
-### 👤 About the author
+### 👤 Upstream author
 
-**司徒K (Situ K)** &nbsp;·&nbsp; serial entrepreneur, long-term thinker
+**司徒K (Situ K)** &nbsp;·&nbsp; project creator and upstream maintainer — v0.1–v0.3 design, security architecture, and the entire gate system originate upstream; this fork preserves and follows them. Maintained here by **sixiang-world**.
 
 [![WeChat: 司徒K](https://img.shields.io/badge/WeChat-司徒K-07C160?style=for-the-badge&logo=wechat&logoColor=white)](https://www.situking.com)
 &nbsp;
 [![Website: situking.com](https://img.shields.io/badge/Website-www.situking.com-1E4B8F?style=for-the-badge&logo=googlechrome&logoColor=white)](https://www.situking.com)
 
-If this project is useful to you, a ⭐ star is appreciated.<br/>
-To talk AI deployment, skill/agent engineering, or the design trade-offs behind this tool, the WeChat account and the website are both good ways to reach me.
+If the upstream project was useful to you, a ⭐ star there is appreciated.<br/>
+To talk AI deployment, skill/agent engineering, or the design trade-offs behind this tool, the WeChat account and the website are both good ways to reach the upstream author.
 
 </div>
 
@@ -110,7 +119,7 @@ An honest list of non-goals saves you more time than a feature list:
 
 ### Option 1: prebuilt binaries
 
-Once public releases are available, download the archive for your platform from [GitHub Releases](https://github.com/situker/qqmail-cli/releases):
+Download the archive for your platform from [GitHub Releases](https://github.com/sixiang-world/qqmail-cli/releases) (v0.4.0 and later):
 
 | Platform | Architectures | Notes |
 |---|---|---|
@@ -131,7 +140,7 @@ On Windows, SmartScreen will warn about an unsigned publisher on first run. That
 Requires Go 1.25+. No CGO, no external toolchain:
 
 ```bash
-git clone https://github.com/situker/qqmail-cli.git
+git clone https://github.com/sixiang-world/qqmail-cli.git
 cd qqmail-cli
 CGO_ENABLED=0 go build -o bin/qqmail-cli ./cmd/qqmail-cli
 ```
@@ -139,7 +148,7 @@ CGO_ENABLED=0 go build -o bin/qqmail-cli ./cmd/qqmail-cli
 Windows PowerShell:
 
 ```powershell
-git clone https://github.com/situker/qqmail-cli.git
+git clone https://github.com/sixiang-world/qqmail-cli.git
 cd qqmail-cli
 $env:CGO_ENABLED = "0"
 go build -o .\bin\qqmail-cli.exe .\cmd\qqmail-cli
@@ -294,7 +303,7 @@ Not supported, by design. qqmail-cli's entire value proposition is doing one pro
 
 ## Project status
 
-Source version `0.3.0-dev`, covering the full three-stage surface: the read-only core (v0.1), local indexing with gated cleanup (v0.2), and allowlisted sending (v0.3). As of 2026-09-01, the complete unit and integration suites, static guards, vulnerability scans, the PowerShell 5.1 smoke test, and six-platform snapshot builds all pass; timestamped read-only observations against real QQ servers live in the [compatibility records](docs/compat/README.md). Formal tags and public releases will follow on the maintainer's schedule; see the [CHANGELOG](CHANGELOG.md).
+Source version `0.4.0` ([release](https://github.com/sixiang-world/qqmail-cli/releases/tag/v0.4.0)), covering four stages: the read-only core (v0.1), local indexing with gated cleanup (v0.2), allowlisted sending (v0.3), and the v0.4 completion round — server-side keyword search (body match, per the archived dialect probe), envelope `--before/--to`, star/trash/folder management, `--reply-all`, `--body-format html`, `--attach-inline`, and `--save-draft`. As of 2026-10-07, the complete unit and integration suites, static guards, vulnerability scans, the PowerShell 5.1 smoke test, and six-platform builds all pass; timestamped read-only observations against real QQ servers (including the search-dialect verdict and drafts-folder resolution) live in the [compatibility records](docs/compat/README.md); see the [CHANGELOG](CHANGELOG.md).
 
 ## Contributing
 

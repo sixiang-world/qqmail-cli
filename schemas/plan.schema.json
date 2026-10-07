@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/situker/qqmail-cli/schemas/plan.schema.json",
+  "$id": "https://github.com/sixiang-world/qqmail-cli/schemas/plan.schema.json",
   "title": "qqmail-cli v0.2 cleanup plan",
   "type": "object",
   "required": ["schema", "created_at", "items", "statistics"],
