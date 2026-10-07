@@ -4,7 +4,30 @@ All notable development changes are recorded here. Formal releases remain owner-
 
 ## Unreleased
 
-(nothing yet)
+### Added (autosend round)
+
+- `send --draft-file <letter.toml>`: compose the whole letter from a TOML
+  draft file (`to`/`cc`/`bcc`/`subject`/`format`/`body`/`body_file`/`attach`/
+  `attach_inline`; paths resolve from the current directory). Mutually
+  exclusive with every compose flag — no merge, no override — and combinable
+  only with `--execute` and `--save-draft`; `reply`/`forward` reject it
+  because their recipients and thread headers come from the original mail.
+- autosend mode: `auto_send`/`send_blacklist`/`daily_auto_limit` account
+  settings (limit defaults to 50/day; missing or ≤0 always means 50). With
+  `auto_send` on, an allowlisted `--execute` send whose recipients are all
+  outside the blacklist completes without the TTY prompt; any blacklisted
+  recipient falls back to the interactive gate; the daily cap denies with
+  exit 50; readonly still wins over everything. The counter is a local
+  content-free state file (`autosend-state.json` next to config.toml) — it
+  never appears in output or audit, and sent mail stays indistinguishable
+  from a manual send.
+- The send confirmation token matches case-insensitively: typing `send` in
+  any casing confirms where `SEND` was required before; `y`/`ok`/empty and
+  non-TTY stdin are still refused.
+- Inline Content-IDs are now derived from the sender's domain
+  (`<chart.png@qq.com>` for an account whose address ends in `@qq.com`)
+  instead of the fixed `qqmail-cli.local` marker, so sent inline-image mail
+  carries no tool fingerprint; Message-ID already used the sender domain.
 
 ## 0.4.0 — 2026-10-07
 

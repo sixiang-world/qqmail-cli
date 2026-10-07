@@ -236,6 +236,7 @@ Agent 集成三件套：
 - **批量读**：先 `envelope list` 一次，再把所有要读的 id 交给**一次** `message show`——每次 CLI 调用就是一次 IMAP 登录，高频登录会触发 QQ 风控。
 - **可重试才重试**：`error.retryable` 为 true 才可重试（指数退避，至多两次）；退出码 30（限流）立即停手等 10–15 分钟；50（policy_denied）代表安全门禁在工作，需要的是人而不是重试。
 - **v0.4 起 Agent 能经同一套门禁做更多**：星标管理（`message flag`）、移入回收站（`message trash`）、文件夹整理（`folder create`/`rename`）、服务器端检索（`search --server`）、存服务器草稿（`--save-draft`）、内嵌图发送（`--attach-inline` + `cid:`）——写命令默认 dry-run，`agent-info` 与 `schema <command>` 随时可查风险级别与输出契约。
+- **发送闭环（需人显式开启）**：账号配置开启 `auto_send` 后，Agent 可用 `send --draft-file` 完成 allowlist 内、黑名单之外的自动发送（受每日限额约束）；收件人命中黑名单即回落 TTY 门禁，readonly 永远优先，allowlist/blacklist 没有 CLI 改写路径。
 
 ## 安全模型
 
@@ -246,7 +247,7 @@ Agent 集成三件套：
 | 写边界 | go-imap 写方法圈禁在单一文件、仅策略层可调 | go/ast 静态扫描跑在 CI（无条件防护） |
 | 不可删 | 无永久删除命令；EXPUNGE/CLOSE 全域禁止 | AST 禁用表 + 协议线路断言 |
 | 清理门禁 | 备份 HMAC + 本地哈希 + 服务器逐封核对 + TTY 键入数量 | 门禁各失败分支表驱动测试 + 端到端测试 |
-| 发送门禁 | 白名单全员命中 + dry-run 默认 + TTY `SEND` + 单发一封 | 本地 TLS SMTP fixture 回归 |
+| 发送门禁 | 白名单全员命中 + dry-run 默认 + TTY 确认（键入 `send`，大小写不限；账号显式开启 `auto_send` 且收件人不在 `send_blacklist` 时，在每日限额内跳过 TTY 自动完成）+ 单发一封 | 本地 TLS SMTP fixture 回归 |
 
 深入阅读：[清理安全模型](docs/v0.2-safety.md) · [安全发送](docs/sending.md) · [安全策略](SECURITY.md)
 

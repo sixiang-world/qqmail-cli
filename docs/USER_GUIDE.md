@@ -412,6 +412,50 @@ Content-ID 为 `<文件名@发件人域名>`（发件人为 shiyuqwq@qq.com 时�
 
 `--save-draft` 把构建好的邮件追加进服务器草稿箱（优先按 `\Drafts` 属性识别，失败时报错而不是猜名字），而不是交给 SMTP 发送。它是**变更操作不是发送**：不需要收件人白名单，但默认 dry-run，`--execute` 仍需 TTY 中确认，readonly 下同样被拒。结果里 `action` 为 `save_draft`、`destination` 是草稿箱名、`sent` 恒为 `false`。
 
+### 草稿文件（--draft-file）
+
+整封信可以写进一个 TOML 文件，命令行只留完成动作：
+
+```toml
+# letter.toml —— 路径（body_file/attach/attach_inline）按当前工作目录解析
+to = ["you@example.com"]          # 必填，数组
+cc = []                           # 可选
+bcc = []                          # 可选
+subject = "十月图表"               # 必填
+format = "html"                   # 可选："text"（默认）|"html"
+body_file = "body.html"           # 与 body 二选一；也可直接写 body = "..."
+attach = []                       # 可选，同 --attach
+attach_inline = ["chart.png"]     # 可选，同 --attach-inline（需 format = "html"）
+```
+
+```powershell
+.in\qqmail-cli.exe send --draft-file .\letter.toml --json
+.in\qqmail-cli.exe send --draft-file .\letter.toml --execute --json
+```
+
+`--draft-file` 与全部撰写参数（`--to/--cc/--bcc/--subject/--body/--body-file/--attach/--attach-inline/--body-format`）**互斥**：不做合并或覆盖，混用即退出码 2；能与其同用的只有 `--execute` 与 `--save-draft`。`reply`/`forward` 不接受 `--draft-file`——它们的收件人与线程头来自原邮件（与 `reply` 拒绝 `--to` 同理）。解析后走与参数路径完全相同的装配与门禁链：dry-run 默认、白名单、附件与正文上限、确认，一个不少。
+
+### 自动发送（auto_send）
+
+账号配置里显式开启后，白名单内的发送可以不经 TTY 键入确认：
+
+```toml
+[accounts.personal]
+email = "your-account@qq.com"
+send_allowlist = ["you@example.com"]
+auto_send = true                 # 默认 false；不开时一切照旧
+send_blacklist = []              # 永不自动发送的地址（白名单之内的严格例外）
+daily_auto_limit = 50            # 每日自动发送上限；缺省或 ≤0 一律按 50
+```
+
+语义（send/reply/forward 共享的完成路径上按顺序判定）：
+
+- readonly（`QQMAIL_CLI_READONLY=1`）永远优先：只读总闸之下 autosend 不生效。
+- 白名单校验不变：任一收件人未命中 → `policy_denied`，与以前完全一致。
+- 任一收件人命中 `send_blacklist` → 本次跳过自动，回落完整 TTY 门禁（非 TTY 下自然拒绝）。
+- `auto_send = true` 且黑名单未命中 → 跳过 TTY 确认直接发送；当日自动计数达到 `daily_auto_limit` → `policy_denied`（退出码 50，不可重试），次日自动重置。
+- 发出的邮件、命令输出与人工发送逐字段一致：没有 "auto" 标记、没有新字段、审计不变；本地计数器只是配置目录下的 `autosend-state.json`（日期 + 次数），不进审计也不进输出。
+
 ## 15. Agent 只读模式
 
 Agent 会话建议默认：
