@@ -33,7 +33,10 @@ func confirmToken(rt *Runtime, token string) error {
 	if err != nil && strings.TrimSpace(value) == "" {
 		return &errmap.Error{Kind: errmap.PolicyDenied, Message: "未收到人工确认", Cause: err}
 	}
-	if strings.TrimSpace(value) != token {
+	// The token match is case-insensitive by design: the prompt says "type
+	// send" and any casing of the same word confirms (EqualFold, not a
+	// reflex key). y/ok/other words and non-TTY stdin are still refused.
+	if !strings.EqualFold(strings.TrimSpace(value), token) {
 		return &errmap.Error{Kind: errmap.PolicyDenied, Message: "确认文本不匹配，操作已取消"}
 	}
 	return nil
