@@ -4,7 +4,7 @@ All notable development changes are recorded here. Formal releases remain owner-
 
 ## Unreleased
 
-### Added (autosend round)
+### Added (2026-10-07 autosend round)
 
 - `send --draft-file <letter.toml>`: compose the whole letter from a TOML
   draft file (`to`/`cc`/`bcc`/`subject`/`format`/`body`/`body_file`/`attach`/

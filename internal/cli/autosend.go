@@ -13,15 +13,12 @@ import (
 	"github.com/situker/qqmail-cli/internal/safeio"
 )
 
-// defaultDailyAutoLimit is what daily_auto_limit means when it is missing or
-// non-positive after config resolution — there is no "0 = unlimited" reading.
-const defaultDailyAutoLimit = 50
-
 // autoSendStateFile is the local daily autosend counter. It lives next to
 // config.toml, is content-free (a date and a count — no recipients, no
 // subjects), is never written to the audit trail and never surfaces in
 // output: the sent mail and the command result stay identical to a manual
-// send's.
+// send's. The file is global — one counter shared by every configured
+// account, not per-account.
 const autoSendStateFile = "autosend-state.json"
 
 // autoSendStatePath returns the counter's path under the config directory
@@ -84,17 +81,24 @@ func autoSendEligible(named account.Named, recipients []string, now time.Time) (
 	}
 	limit := named.DailyAutoLimit
 	if limit <= 0 {
-		limit = defaultDailyAutoLimit
+		limit = account.DefaultDailyAutoLimit
 	}
 	if readAutoSendState(now).Count >= limit {
-		return false, &errmap.Error{Kind: errmap.PolicyDenied, Message: "已达今日自动发送上限", Suggestion: fmt.Sprintf("每日自动发送上限 %d 封；明日自动重置，或人工在交互终端执行（不受此限）", limit)}
+		// Honest wording only: with auto_send on this gate fires before any
+		// TTY branch, so retyping the command in a real terminal does NOT
+		// bypass the cap — the human remedy is editing the config (or
+		// waiting for the day to roll over). There is no bypass flag.
+		return false, &errmap.Error{Kind: errmap.PolicyDenied, Message: fmt.Sprintf("已达今日自动发送上限 %d 封", limit), Suggestion: "明日自动重置，或由人工调整 auto_send/daily_auto_limit 配置后再执行"}
 	}
 	return true, nil
 }
 
 // bumpAutoSendCount increments today's local autosend counter (read-modify-
 // write through safeio's atomic replace). Failures are returned to the caller
-// for a stderr hint — the send itself already succeeded.
+// for a stderr hint — the send itself already succeeded. The read-modify-write
+// is intentionally unsynchronized: the CLI is a single-process, one-send-per-
+// invocation tool, so concurrent bumps are out of scope by design; a lost
+// update in a race would only under-count (TOCTOU accepted).
 func bumpAutoSendCount(now time.Time) error {
 	state := autoSendState{Date: now.Format("2006-01-02"), Count: 1}
 	if existing := readAutoSendState(now); existing.Date == state.Date {

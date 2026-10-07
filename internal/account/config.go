@@ -15,6 +15,12 @@ import (
 
 const ConfigSchema = 1
 
+// DefaultDailyAutoLimit is the per-day autosend cap whenever an account's
+// daily_auto_limit is missing or non-positive — there is no "0 = unlimited"
+// reading. cli/autosend.go re-applies it as defense in depth for directly
+// constructed accounts; keep the single constant as the only source.
+const DefaultDailyAutoLimit = 50
+
 var validName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
 type Account struct {
@@ -207,9 +213,7 @@ func (c *Config) Resolve(name string) (Named, error) {
 	}
 	dailyAutoLimit := value.DailyAutoLimit
 	if dailyAutoLimit <= 0 {
-		// A missing or non-positive limit always means the 50-per-day default;
-		// there is no "0 = unlimited" reading.
-		dailyAutoLimit = 50
+		dailyAutoLimit = DefaultDailyAutoLimit
 	}
 	return Named{Name: name, Email: value.Email, IMAPHost: value.Host(), IMAPPort: value.Port(), SMTPHost: smtpHost, SMTPPort: smtpPort, SendAllowlist: append([]string(nil), value.SendAllowlist...), AutoSend: value.AutoSend, SendBlacklist: append([]string(nil), value.SendBlacklist...), DailyAutoLimit: dailyAutoLimit, IsDefault: name == c.DefaultAccount}, nil
 }

@@ -119,6 +119,15 @@ func TestAutoSendEligible(t *testing.T) {
 		if !strings.Contains(err.Error(), "已达今日自动发送上限") {
 			t.Fatalf("cap error must name the limit: %v", err)
 		}
+		// The hint must stay honest: there is no TTY bypass for the cap while
+		// auto_send is on — the remedy is config, not a re-typed command.
+		classified := errmap.Classify(err)
+		if strings.Contains(classified.Suggestion, "交互终端执行") || strings.Contains(classified.Suggestion, "不受此限") {
+			t.Fatalf("cap suggestion must not promise a TTY bypass: %q", classified.Suggestion)
+		}
+		if !strings.Contains(classified.Suggestion, "auto_send/daily_auto_limit") {
+			t.Fatalf("cap suggestion must point at the config knobs: %q", classified.Suggestion)
+		}
 		_, code := errmap.Details(err)
 		failure, _ := errmap.Details(err)
 		if code != 50 || failure.Retryable {

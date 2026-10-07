@@ -99,6 +99,16 @@ func TestLoadDraftFile(t *testing.T) {
 			t.Fatalf("corrupt TOML must be a usage error, got %v", err)
 		}
 	})
+	// Unknown keys must not be silently dropped: a mistyped key would send a
+	// letter with missing content, and under autosend nobody reviews the
+	// preview. The error names the offending key.
+	t.Run("unknown key is rejected naming the key", func(t *testing.T) {
+		path := writeDraftFile(t, "to = [\"reader@example.com\"]\nsubject = \"s\"\nbody = \"b\"\nsubjct = \"typo\"\n")
+		_, err := loadDraftFile(path)
+		if err == nil || errmap.Classify(err).Kind != errmap.Usage || !strings.Contains(err.Error(), "subjct") {
+			t.Fatalf("unknown key must be a usage error naming it, got %v", err)
+		}
+	})
 }
 
 // --draft-file is mutually exclusive with every compose flag: no merge, no
@@ -117,9 +127,10 @@ func TestDraftFileMutuallyExclusiveWithFlags(t *testing.T) {
 	runExit(t, 2, "send", "--draft-file", "x.toml", "--body-format", "html", "--json")
 }
 
-// reply and forward never take --draft-file: their recipients and thread
-// headers come from the original mail, and the spec forbids merge/override
-// semantics — the same reason reply rejects --to.
+// reply refuses --draft-file in RunE: its recipients and thread headers come
+// from the original mail, and the spec forbids merge/override semantics — the
+// same reason reply rejects --to. forward is refused earlier by cobra: its
+// required --to flag fires before RunE (the same usage exit code 2).
 func TestReplyAndForwardRejectDraftFile(t *testing.T) {
 	t.Setenv("QQMAIL_CLI_READONLY", "0")
 	id := replyAllMsgID

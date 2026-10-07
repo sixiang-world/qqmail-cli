@@ -214,10 +214,12 @@ func newForwardCommand(rt *Runtime) *cobra.Command {
 	var opts composeOptions
 	cmd := &cobra.Command{Use: "forward <id>", Args: cobra.ExactArgs(1), Short: "Forward a quoted message and its attachments; dry-run by default"}
 	addComposeFlags(cmd, &opts, true, false)
+	// No draft-file fork here: forward's --to stays a required flag, so cobra
+	// refuses `forward --draft-file` as a usage error before RunE runs — a
+	// draft file carrying its own recipients would contradict the forward
+	// semantics anyway. reply (no required flags) does its own refusal in
+	// rejectDraftFileForThreadedCommand.
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if opts.DraftFile != "" {
-			return rejectDraftFileForThreadedCommand("forward")
-		}
 		if err := validateBodyFormat(opts.BodyFormat); err != nil {
 			return err
 		}

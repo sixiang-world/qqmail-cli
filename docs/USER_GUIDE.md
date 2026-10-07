@@ -429,8 +429,8 @@ attach_inline = ["chart.png"]     # 可选，同 --attach-inline（需 format = 
 ```
 
 ```powershell
-.in\qqmail-cli.exe send --draft-file .\letter.toml --json
-.in\qqmail-cli.exe send --draft-file .\letter.toml --execute --json
+.\bin\qqmail-cli.exe send --draft-file .\letter.toml --json
+.\bin\qqmail-cli.exe send --draft-file .\letter.toml --execute --json
 ```
 
 `--draft-file` 与全部撰写参数（`--to/--cc/--bcc/--subject/--body/--body-file/--attach/--attach-inline/--body-format`）**互斥**：不做合并或覆盖，混用即退出码 2；能与其同用的只有 `--execute` 与 `--save-draft`。`reply`/`forward` 不接受 `--draft-file`——它们的收件人与线程头来自原邮件（与 `reply` 拒绝 `--to` 同理）。解析后走与参数路径完全相同的装配与门禁链：dry-run 默认、白名单、附件与正文上限、确认，一个不少。
@@ -455,6 +455,7 @@ daily_auto_limit = 50            # 每日自动发送上限；缺省或 ≤0 一
 - 任一收件人命中 `send_blacklist` → 本次跳过自动，回落完整 TTY 门禁（非 TTY 下自然拒绝）。
 - `auto_send = true` 且黑名单未命中 → 跳过 TTY 确认直接发送；当日自动计数达到 `daily_auto_limit` → `policy_denied`（退出码 50，不可重试），次日自动重置。
 - 发出的邮件、命令输出与人工发送逐字段一致：没有 "auto" 标记、没有新字段、审计不变；本地计数器只是配置目录下的 `autosend-state.json`（日期 + 次数），不进审计也不进输出。
+- 每日计数器是配置目录下的**全局单文件**（不按账号区分），多个账号共享同一每日配额。
 
 ## 15. Agent 只读模式
 

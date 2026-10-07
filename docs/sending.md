@@ -30,9 +30,11 @@ qqmail-cli forward <opaque-id> --to you@example.com --body "转发说明"
 
 1. 未启用 `QQMAIL_CLI_READONLY=1`。
 2. 全部收件人命中非空白名单。
-3. stdin 是真实 TTY。
-4. 人工核对摘要并键入 `SEND`。
+3. 账号未开启 `auto_send`（或任一收件人命中 `send_blacklist`）时，stdin 必须是真实 TTY。
+4. 人工核对摘要并键入 `send`（大小写不限；`y`/`ok`/空输入均被拒绝）。
 5. 系统凭据管理器中存在该账号授权码。
+
+账号配置显式开启 `auto_send` 且全部收件人在白名单内、无一命中 `send_blacklist`、当日自动发送计数未达 `daily_auto_limit`（默认 50）时，命令跳过 TTY 确认直接发送；黑名单命中或计数器达到上限仍按门禁拒绝。readonly 永远优先于 autosend。每日计数器是本地全局单文件（多账号共享同一配额），不进审计也不进输出。
 
 执行示例是在人工终端中给已审阅的 dry-run 命令追加 `--execute`。项目不提供 `--yes`、`--force`、`--no-confirm` 或其他 bypass flag。
 
