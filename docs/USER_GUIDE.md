@@ -386,7 +386,7 @@ HTML 正文里用 `cid:` 引用图片文件，图片随邮件作为内嵌部件�
 ```powershell
 @"
 <p>十月数据见图表：</p>
-<p><img src="cid:chart.png@qqmail-cli.local" alt="月度图表"></p>
+<p><img src="cid:chart.png@qq.com" alt="月度图表"></p>
 "@ | Set-Content -Path .\body.html -Encoding UTF8
 
 .\bin\qqmail-cli.exe send --to allowed@example.com --subject "十月图表" `
@@ -394,12 +394,12 @@ HTML 正文里用 `cid:` 引用图片文件，图片随邮件作为内嵌部件�
   --attach-inline .\chart.png --json
 ```
 
-Content-ID 为 `<文件名@qqmail-cli.local>`（本例为 `<chart.png@qqmail-cli.local>`），dry-run 预览会列出每个文件的确切引用。
+Content-ID 为 `<文件名@发件人域名>`（发件人为 shiyuqwq@qq.com 时即 `<chart.png@qq.com>`），dry-run 预览会列出每个文件的确切引用。
 
 规则：
 
 - `--attach-inline` 必须与 `--body-format html` 同用（否则退出码 2）；普通附件仍走 `--attach`，两者合计共享 20 MiB 上限。
-- 每个内嵌文件的 Content-ID 由文件名确定性派生，dry-run 预览逐个列出（`Inline: chart.png (image/png, ..., Content-ID: <chart.png@qqmail-cli.local>)`），JSON 输出在 `summary.attachments[].content_id`。
+- 每个内嵌文件的 Content-ID 由文件名确定性派生，dry-run 预览逐个列出（`Inline: chart.png (image/png, ..., Content-ID: <chart.png@qq.com>)`），JSON 输出在 `summary.attachments[].content_id`。
 - `reply`/`forward` 也支持 `--attach-inline`；`forward` 会自动携带原邮件的内嵌图数据。
 
 ### 存草稿（--save-draft）

@@ -117,47 +117,51 @@ func newReplyCommand(rt *Runtime) *cobra.Command {
 			return err
 		}
 		reportOriginalWarnings(rt, original)
-		body, err := composeBody(opts.Body, opts.BodyFile)
-		if err != nil {
-			return err
+	body, err := composeBody(opts.Body, opts.BodyFile)
+	if err != nil {
+		return err
+	}
+	to := original.ReplyTo
+	if len(to) == 0 {
+		to = modelAddresses(original.Parsed.From)
+	}
+	if len(to) == 0 {
+		return &errmap.Error{Kind: errmap.ParseError, Message: "原邮件没有可用的回复地址"}
+	}
+	cc := []mail.Address{}
+	if replyAll {
+		// Reply-all extends the reply semantics (Reply-To, default From)
+		// with the original To/Cc; the original Bcc never takes part.
+		to, cc = mergeReplyAll(named.Email, to, original.To, original.Cc)
+		if len(to)+len(cc) == 0 {
+			return &errmap.Error{Kind: errmap.Usage, Message: "reply-all 合并后没有收件人（原邮件只发给你自己）"}
 		}
-		to := original.ReplyTo
-		if len(to) == 0 {
-			to = modelAddresses(original.Parsed.From)
-		}
-		if len(to) == 0 {
-			return &errmap.Error{Kind: errmap.ParseError, Message: "原邮件没有可用的回复地址"}
-		}
-		cc := []mail.Address{}
-		if replyAll {
-			// Reply-all extends the reply semantics (Reply-To, default From)
-			// with the original To/Cc; the original Bcc never takes part.
-			to, cc = mergeReplyAll(named.Email, to, original.To, original.Cc)
-			if len(to)+len(cc) == 0 {
-				return &errmap.Error{Kind: errmap.Usage, Message: "reply-all 合并后没有收件人（原邮件只发给你自己）"}
-			}
-		}
-		extra, err := parseAddresses(opts.Cc)
-		if err != nil {
-			return err
-		}
-		cc = append(cc, extra...)
-		bcc, err := parseAddresses(opts.Bcc)
-		if err != nil {
-			return err
-		}
-		attachments, err := loadAttachments(opts.Attachments)
-		if err != nil {
-			return err
-		}
-		inlines, err := loadInlineAttachments(opts.AttachInline, opts.BodyFormat, attachmentBytes(attachments))
-		if err != nil {
-			return err
-		}
-		subject := opts.Subject
-		if subject == "" {
-			subject = prefixedSubject(original.Parsed.Subject, "Re:")
-		}
+	}
+	extra, err := parseAddresses(opts.Cc)
+	if err != nil {
+		return err
+	}
+	cc = append(cc, extra...)
+	bcc, err := parseAddresses(opts.Bcc)
+	if err != nil {
+		return err
+	}
+	domain, err := senderDomain(named.Email)
+	if err != nil {
+		return err
+	}
+	attachments, err := loadAttachments(opts.Attachments)
+	if err != nil {
+		return err
+	}
+	inlines, err := loadInlineAttachments(opts.AttachInline, opts.BodyFormat, domain, attachmentBytes(attachments))
+	if err != nil {
+		return err
+	}
+	subject := opts.Subject
+	if subject == "" {
+		subject = prefixedSubject(original.Parsed.Subject, "Re:")
+	}
 		quoted := quoteOriginal(original.Parsed)
 		if body != "" {
 			body += "\n\n"
@@ -214,11 +218,15 @@ func newForwardCommand(rt *Runtime) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		domain, err := senderDomain(named.Email)
+		if err != nil {
+			return err
+		}
 		attachments, err := loadAttachments(opts.Attachments)
 		if err != nil {
 			return err
 		}
-		inlines, err := loadInlineAttachments(opts.AttachInline, opts.BodyFormat, attachmentBytes(attachments))
+		inlines, err := loadInlineAttachments(opts.AttachInline, opts.BodyFormat, domain, attachmentBytes(attachments))
 		if err != nil {
 			return err
 		}
@@ -301,11 +309,15 @@ func draftFromOptions(named account.Named, opts composeOptions) (sendmail.Draft,
 	if err != nil {
 		return sendmail.Draft{}, err
 	}
+	domain, err := senderDomain(named.Email)
+	if err != nil {
+		return sendmail.Draft{}, err
+	}
 	attachments, err := loadAttachments(opts.Attachments)
 	if err != nil {
 		return sendmail.Draft{}, err
 	}
-	inlines, err := loadInlineAttachments(opts.AttachInline, opts.BodyFormat, attachmentBytes(attachments))
+	inlines, err := loadInlineAttachments(opts.AttachInline, opts.BodyFormat, domain, attachmentBytes(attachments))
 	if err != nil {
 		return sendmail.Draft{}, err
 	}
@@ -522,28 +534,28 @@ func loadAttachmentFiles(paths []string, loaded int64) ([]sendmail.Attachment, e
 // loadInlineAttachments loads the CID-referenced images of an HTML body. A
 // non-html body format is a usage error — inline parts are meaningless without
 // cid: references; the files share the 20 MiB combined cap with --attach and
-// each gets a bare Content-ID derived deterministically from its file name, so
-// the cid:<filename@qqmail-cli.local> reference in the HTML body resolves on
-// the receiving side. Two files deriving the same id (same base name, or names
-// that sanitize to
+// each gets a bare Content-ID derived deterministically from its file name and
+// the sender's domain, so the cid:<filename@sender-domain> reference in the
+// HTML body resolves on the receiving side. Two files deriving the same id
+// (same base name, or names that sanitize to
 // the same id) are a usage error — a duplicate would leave one cid: reference
 // unresolvable, so there is no silent dedup.
-func loadInlineAttachments(paths []string, bodyFormat string, loaded int64) ([]sendmail.Attachment, error) {
+func loadInlineAttachments(paths []string, bodyFormat, domain string, loaded int64) ([]sendmail.Attachment, error) {
 	if len(paths) == 0 {
 		return nil, nil
 	}
 	if bodyFormat != "html" {
-		return nil, &errmap.Error{Kind: errmap.Usage, Message: "--attach-inline 需要 --body-format html", Suggestion: "内嵌图由 HTML 正文以 cid:<文件名@qqmail-cli.local> 引用（Content-ID 为 <文件名@qqmail-cli.local>，dry-run 预览会列出每个文件的确切引用），只能与 --body-format html 同用；普通附件请改用 --attach"}
+		return nil, &errmap.Error{Kind: errmap.Usage, Message: "--attach-inline 需要 --body-format html", Suggestion: fmt.Sprintf("内嵌图由 HTML 正文以 cid:<文件名@%s> 引用（Content-ID 为 <文件名@%s>，dry-run 预览会列出每个文件的确切引用），只能与 --body-format html 同用；普通附件请改用 --attach", domain, domain)}
 	}
 	contentIDs := make([]string, len(paths))
 	derived := make(map[string]string, len(paths))
 	for i, path := range paths {
-		id, err := deriveInlineContentID(path)
+		id, err := deriveInlineContentID(path, domain)
 		if err != nil {
 			return nil, err
 		}
 		if previous, duplicate := derived[id]; duplicate {
-			return nil, &errmap.Error{Kind: errmap.Usage, Message: fmt.Sprintf("内嵌附件 %q 与 %q 同名：派生出相同的 Content-ID %q", previous, path, id), Suggestion: "HTML 正文按文件名以 cid:<文件名@qqmail-cli.local> 引用内嵌图（Content-ID 为 <文件名@qqmail-cli.local>，dry-run 预览会列出每个文件的确切引用），--attach-inline 的文件名必须互不相同；请重命名其中一个文件后重试"}
+			return nil, &errmap.Error{Kind: errmap.Usage, Message: fmt.Sprintf("内嵌附件 %q 与 %q 同名：派生出相同的 Content-ID %q", previous, path, id), Suggestion: fmt.Sprintf("HTML 正文按文件名以 cid:<文件名@%s> 引用内嵌图（Content-ID 为 <文件名@%s>，dry-run 预览会列出每个文件的确切引用），--attach-inline 的文件名必须互不相同；请重命名其中一个文件后重试", domain, domain)}
 		}
 		derived[id] = path
 		contentIDs[i] = id
@@ -564,17 +576,19 @@ func loadInlineAttachments(paths []string, bodyFormat string, loaded int64) ([]s
 // for pathologically long file names.
 const maxInlineContentIDBytes = 64
 
-// deriveInlineContentID derives a bare Content-ID ("localpart@qqmail-cli.local",
+// deriveInlineContentID derives a bare Content-ID ("localpart@domain",
 // no angle brackets — Build wraps it when writing the header) from the file's
-// base name: the HTML body references the image as
-// cid:<filename@qqmail-cli.local>, so the same
+// base name and the sender's domain: the HTML body references the image as
+// cid:<filename@sender-domain>, so the same
 // file name must always yield the same resolvable id. Spaces become dashes;
 // control characters, other whitespace, angle brackets and '@' are stripped
 // (they would break the id@domain form or truncate the header value);
 // non-ASCII characters are kept — the localpart of a Content-ID tolerates
 // them. The localpart is truncated at maxInlineContentIDBytes on a rune
-// boundary.
-func deriveInlineContentID(path string) (string, error) {
+// boundary. The domain comes from the sender address, matching what
+// mainstream clients do (RFC 5322 allows the sending domain); a sender
+// address without a domain part is a usage error.
+func deriveInlineContentID(path, domain string) (string, error) {
 	base := filepath.Base(path)
 	var local strings.Builder
 	for _, r := range base {
@@ -599,7 +613,19 @@ func deriveInlineContentID(path string) (string, error) {
 	if id == "" {
 		return "", &errmap.Error{Kind: errmap.Usage, Message: fmt.Sprintf("无法从内嵌附件文件名 %q 派生 Content-ID：文件名不含可用字符", base), Suggestion: "请用常规字符重命名文件后重试"}
 	}
-	return id + "@qqmail-cli.local", nil
+	return id + "@" + domain, nil
+}
+
+// senderDomain extracts the domain part of the account's own address so
+// Content-IDs and other sender-derived identifiers use the sender's domain.
+// The config layer requires an address containing '@', so a missing separator
+// surfaces as a usage error instead of a silently wrong domain.
+func senderDomain(email string) (string, error) {
+	at := strings.LastIndexByte(email, '@')
+	if at < 0 || at == len(email)-1 {
+		return "", &errmap.Error{Kind: errmap.Usage, Message: fmt.Sprintf("账号邮箱地址 %q 缺少域名部分，无法派生 Content-ID", email), Suggestion: "请在账号配置中填写完整邮箱地址"}
+	}
+	return email[at+1:], nil
 }
 
 // sniffContentType prefers the extension's registered type, falls back to

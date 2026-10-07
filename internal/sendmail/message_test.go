@@ -426,7 +426,7 @@ func TestInlineContentIDValidationBranches(t *testing.T) {
 		contentID string
 		wantErr   string
 	}{
-		{"control character in content id", "logo\x01.png@qqmail-cli.local", "control character"},
+		{"control character in content id", "logo\x01.png@example.com", "control character"},
 		{"whitespace-only content id", "   ", "content id"},
 	} {
 		draft := Draft{From: from, To: []mail.Address{to}, Subject: "s", Body: "<p>x</p>", BodyFormat: "html",

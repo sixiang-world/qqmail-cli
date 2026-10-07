@@ -171,7 +171,7 @@ func TestV04ComposeOutputMatchesSharedSchemas(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := runCLIReader(t, fakeReader{}, "send", "--to", "reader@example.com", "--subject", "s",
-		"--body-format", "html", "--body", `<p>hi</p><img src="cid:logo.png@qqmail-cli.local">`, "--attach-inline", png, "--json")
+		"--body-format", "html", "--body", `<p>hi</p><img src="cid:logo.png@qq.com">`, "--attach-inline", png, "--json")
 	validateOutput(t, "send.schema.json", []byte(out))
 	mustContain(t, out, `"body_preview"`, `"html_source_excerpt"`, `"content_id"`)
 

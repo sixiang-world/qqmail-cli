@@ -335,8 +335,8 @@ func TestAttachInlineFlagWiring(t *testing.T) {
 		}
 		human := out.String() + stderr.String()
 		for _, want := range []string{
-			"Inline: logo.png (image/png, 8 bytes, Content-ID: <logo.png@qqmail-cli.local>)",
-			"Inline: imageblob (image/png, 8 bytes, Content-ID: <imageblob@qqmail-cli.local>)",
+			"Inline: logo.png (image/png, 8 bytes, Content-ID: <logo.png@qq.com>)",
+			"Inline: imageblob (image/png, 8 bytes, Content-ID: <imageblob@qq.com>)",
 			"HTML 正文将原样发送，未经消毒；请检查上方源码摘要",
 		} {
 			if !strings.Contains(human, want) {
@@ -374,7 +374,7 @@ func TestAttachInlineFlagWiring(t *testing.T) {
 			t.Fatal(err)
 		}
 		attachments := envelope.Data.Summary.Attachments
-		if len(attachments) != 1 || attachments[0].Filename != "logo.png" || attachments[0].ContentID != "logo.png@qqmail-cli.local" {
+		if len(attachments) != 1 || attachments[0].Filename != "logo.png" || attachments[0].ContentID != "logo.png@qq.com" {
 			t.Fatalf("unexpected summary attachments: %+v", attachments)
 		}
 	})
@@ -419,7 +419,7 @@ func TestAttachInlineFlagWiring(t *testing.T) {
 		root.SetArgs([]string{"--config", configPath, "send", "--to", "reader@example.com", "--subject", "fixture",
 			"--body", "<p>x</p>", "--body-format", "html", "--attach-inline", first, "--attach-inline", second})
 		err := root.Execute()
-		if err == nil || errmap.Classify(err).Kind != errmap.Usage || !strings.Contains(err.Error(), "logo.png@qqmail-cli.local") {
+		if err == nil || errmap.Classify(err).Kind != errmap.Usage || !strings.Contains(err.Error(), "logo.png@qq.com") {
 			t.Fatalf("duplicate inline file names must be a usage error naming the derived id, got %v", err)
 		}
 	})
@@ -463,7 +463,7 @@ func TestAttachInlineFlagWiring(t *testing.T) {
 					t.Fatalf("expected 1 inline, got %d", len(draft.Inlines))
 				}
 				cid := draft.Inlines[0].ContentID
-				if cid != "logo.png@qqmail-cli.local" {
+				if cid != "logo.png@qq.com" {
 					t.Fatalf("content id not derived from filename: %q", cid)
 				}
 				if draft.Inlines[0].Filename != "logo.png" || draft.Inlines[0].ContentType != "image/png" {
@@ -480,7 +480,7 @@ func TestAttachInlineFlagWiring(t *testing.T) {
 		if len(rawMessage) == 0 || !bytes.Contains(rawMessage, []byte("multipart/related")) {
 			t.Fatalf("sent raw message is not multipart/related")
 		}
-		if !bytes.Contains(rawMessage, []byte("Content-Id: <logo.png@qqmail-cli.local>")) {
+		if !bytes.Contains(rawMessage, []byte("Content-Id: <logo.png@qq.com>")) {
 			t.Fatalf("sent raw message missing the filename-derived Content-Id header")
 		}
 	})
@@ -518,7 +518,7 @@ func TestAttachInlineFlagWiring(t *testing.T) {
 					},
 					SendMail: func(_ context.Context, _ account.Named, _ string, draft sendmail.Draft, _ []byte) error {
 						called = true
-						if draft.BodyFormat != "html" || len(draft.Inlines) != 1 || draft.Inlines[0].Filename != "logo.png" || draft.Inlines[0].ContentID != "logo.png@qqmail-cli.local" {
+						if draft.BodyFormat != "html" || len(draft.Inlines) != 1 || draft.Inlines[0].Filename != "logo.png" || draft.Inlines[0].ContentID != "logo.png@qq.com" {
 							t.Fatalf("%s dropped --attach-inline: format=%q inlines=%+v", tc.name, draft.BodyFormat, draft.Inlines)
 						}
 						return nil
@@ -538,7 +538,7 @@ func TestAttachInlineFlagWiring(t *testing.T) {
 }
 
 // The Content-ID must be derived deterministically from the file name so the
-// cid:<filename@qqmail-cli.local> reference in the HTML body resolves on the
+// cid:<filename@qq.com> reference in the HTML body resolves on the
 // receiving side:
 // spaces become dashes, control characters/angle brackets/'@'/whitespace are
 // stripped, non-ASCII is kept, over-long names are truncated, and a name
@@ -549,17 +549,17 @@ func TestInlineContentIDDerivedFromFilename(t *testing.T) {
 		if err := os.WriteFile(path, []byte("\x89PNG\r\n\x1a\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		inlines, err := loadInlineAttachments([]string{path}, "html", 0)
+		inlines, err := loadInlineAttachments([]string{path}, "html", "qq.com", 0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(inlines) != 1 || inlines[0].ContentID != "logo.png@qqmail-cli.local" || inlines[0].ContentType != "image/png" {
+		if len(inlines) != 1 || inlines[0].ContentID != "logo.png@qq.com" || inlines[0].ContentType != "image/png" {
 			t.Fatalf("unexpected inlines: %+v", inlines)
 		}
 	})
 	t.Run("spaces become dashes", func(t *testing.T) {
-		id, err := deriveInlineContentID("pic/my chart.png")
-		if err != nil || id != "my-chart.png@qqmail-cli.local" {
+		id, err := deriveInlineContentID("pic/my chart.png", "qq.com")
+		if err != nil || id != "my-chart.png@qq.com" {
 			t.Fatalf("id=%q err=%v", id, err)
 		}
 	})
@@ -567,27 +567,27 @@ func TestInlineContentIDDerivedFromFilename(t *testing.T) {
 	// control characters (e.g. \x01 from a bad archive) must be stripped, not
 	// sent, and angle brackets/'@' would truncate or forge the header value.
 	t.Run("control characters angle brackets and at are stripped", func(t *testing.T) {
-		id, err := deriveInlineContentID("dir/de\x01ad<b>@v1.png")
-		if err != nil || id != "deadbv1.png@qqmail-cli.local" {
+		id, err := deriveInlineContentID("dir/de\x01ad<b>@v1.png", "qq.com")
+		if err != nil || id != "deadbv1.png@qq.com" {
 			t.Fatalf("id=%q err=%v", id, err)
 		}
 	})
 	t.Run("non-ascii preserved", func(t *testing.T) {
-		id, err := deriveInlineContentID("报表/图表.png")
-		if err != nil || id != "图表.png@qqmail-cli.local" {
+		id, err := deriveInlineContentID("报表/图表.png", "qq.com")
+		if err != nil || id != "图表.png@qq.com" {
 			t.Fatalf("id=%q err=%v", id, err)
 		}
 	})
 	t.Run("long filename truncated", func(t *testing.T) {
-		id, err := deriveInlineContentID("pic/" + strings.Repeat("a", 200) + ".png")
-		want := strings.Repeat("a", 64) + "@qqmail-cli.local"
+		id, err := deriveInlineContentID("pic/"+strings.Repeat("a", 200)+".png", "qq.com")
+		want := strings.Repeat("a", 64) + "@qq.com"
 		if err != nil || id != want {
 			t.Fatalf("id length=%d err=%v, want 64-byte localpart", len(id), err)
 		}
 	})
 	t.Run("filename without usable characters rejected", func(t *testing.T) {
 		for _, path := range []string{"dir/<>@", "\t\t"} {
-			id, err := deriveInlineContentID(path)
+			id, err := deriveInlineContentID(path, "qq.com")
 			if err == nil || errmap.Classify(err).Kind != errmap.Usage || id != "" {
 				t.Fatalf("path %q: want usage error, got id=%q err=%v", path, id, err)
 			}
