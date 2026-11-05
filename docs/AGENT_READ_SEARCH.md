@@ -26,6 +26,12 @@ See [MCP_READONLY.md](MCP_READONLY.md) for the experimental read-only stdio adap
 qqmail-cli watch --jsonl --once --resume-uid 128 --resume-uidvalidity 42
 ```
 
-Pass **both** the last acknowledged UID and the matching mailbox UIDVALIDITY. The CLI uses these coordinates instead of looking at the local index. Every `new_message` event contains the message UID and UIDVALIDITY. After downstream processing succeeds, persist these coordinates in the automation's own durable state. If UIDVALIDITY changes, the CLI emits a `folder_reset` event; the old checkpoint must not be reused. This is a read-only resume interface, not a built-in scheduler or a transactional delivery queue.
+Pass **both** the last acknowledged UID and the matching mailbox UIDVALIDITY. The CLI uses these coordinates instead of looking at the local index. Every `new_message` event contains the message UID and UIDVALIDITY. After downstream processing succeeds, persist these coordinates in the automation's own durable state. If UIDVALIDITY changes, the CLI emits a `folder_reset` event without acknowledging messages in the new generation. After handling the reset, restart with the checkpoint `(0, new UIDVALIDITY)` to scan messages in the new generation; the old checkpoint must not be reused. This is a read-only resume interface, not a built-in scheduler or a transactional delivery queue.
 
 Without a checkpoint, the first polling run may initialize at the latest message without emitting historical events. Consumers that need at-least-once processing should maintain their checkpoint externally; acknowledging an event before processing it risks missing that message on a crash.
+
+## Global unattended-send quota
+
+`daily_auto_limit` is configured per account, but the reservation counter is intentionally **global across all configured accounts** for this OS user. Each unattended send compares the same global count to the active account's limit; switching accounts does not allocate a new quota. A lower-limit account may become blocked earlier and a higher-limit account can still reserve up to its own threshold, so operators should set compatible limits across accounts. Reservations are never automatically refunded after errors. The counter uses the host's local calendar date; backwards clock changes fail closed until the stored date is reached. Unix directory entries are synced after atomic rename; Windows directory-sync durability is not claimed.
+
+For a known empty mailbox, explicitly pass `--resume-uid 0 --resume-uidvalidity <generation>`; omitting both flags uses the historical bootstrap behavior and can skip existing messages. The caller is responsible for durable acknowledgements and duplicate handling.

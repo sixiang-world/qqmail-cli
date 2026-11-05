@@ -51,3 +51,29 @@ func TestAutoSendReservationsAreAtomic(t *testing.T) {
     state, err := readAutoSendState(now)
     if err != nil || state.Count != limit { t.Fatalf("counter=%+v err=%v", state, err) }
 }
+
+func TestAutoSendFutureCounterDateFailsClosed(t *testing.T) {
+	path := withAutoSendStateDir(t)
+	now := time.Date(2026, 11, 6, 23, 59, 0, 0, time.Local)
+	raw := []byte(`{"date":"2026-11-07","count":1}`)
+	if err := os.WriteFile(path, raw, 0o600); err != nil { t.Fatal(err) }
+	named := account.Named{AutoSend:true,DailyAutoLimit:3}
+	if err := reserveAutoSend(named,now);err==nil || errmap.Classify(err).Kind!=errmap.PolicyDenied {
+		t.Fatalf("clock rollback must deny unattended send: %v",err)
+	}
+	if got,err:=os.ReadFile(path);err!=nil || string(got)!=string(raw) {
+		t.Fatalf("future-dated counter overwritten: %q %v",got,err)
+	}
+}
+
+func TestAutoSendSharedGlobalCounterAcrossAccounts(t *testing.T) {
+	withAutoSendStateDir(t)
+	now:=time.Now()
+	first:=account.Named{AutoSend:true,DailyAutoLimit:2,Email:"one@qq.com"}
+	second:=account.Named{AutoSend:true,DailyAutoLimit:2,Email:"two@qq.com"}
+	if err:=reserveAutoSend(first,now);err!=nil{t.Fatal(err)}
+	if err:=reserveAutoSend(second,now);err!=nil{t.Fatal(err)}
+	if err:=reserveAutoSend(first,now);err==nil{
+		t.Fatal("shared global daily cap bypassed using another account")
+	}
+}

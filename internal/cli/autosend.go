@@ -44,6 +44,15 @@ func readAutoSendState(now time.Time) (autoSendState, error) {
     if state.Count < 0 || state.Date == "" {
         return fresh, fmt.Errorf("autosend counter has invalid fields")
     }
+    parsed, parseErr := time.Parse("2006-01-02", state.Date)
+    if parseErr != nil || parsed.Format("2006-01-02") != state.Date {
+        return fresh, fmt.Errorf("autosend counter has invalid date")
+    }
+    // Clock rollback or a timezone change must not reset the daily quota.
+    // Refuse unattended sending until the counter date catches up.
+    if state.Date > fresh.Date {
+        return fresh, fmt.Errorf("autosend counter date is in the future")
+    }
     if state.Date != fresh.Date { return fresh, nil }
     return state, nil
 }

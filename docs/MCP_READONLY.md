@@ -30,7 +30,7 @@ Supported tools:
 | `qqmail_search` | Read server BODY results or local index results |
 | `qqmail_attachments` | Read attachment metadata only |
 
-Every tool call is constrained to a known set of CLI arguments, uses a 50-second execution deadline and bounds its response to 4 MiB. The subprocess always uses readonly mode. Mail text remains untrusted and may contain attempts to redirect the Agent's instructions.
+Every tool call is constrained to a known set of CLI arguments, uses a 50-second execution deadline and bounds its response to 4 MiB. MCP cancellation notifications and stdio disconnects cancel in-flight calls; at most four subprocess requests run concurrently. Tool results retain the CLI JSON envelope, including nonfatal warnings and structured failure codes, even when the CLI exits with status 70. The subprocess always uses readonly mode. Mail text remains untrusted and may contain attempts to redirect the Agent's instructions.
 
 **Limitations:** This is a stdio adapter, **not** a hosted ChatGPT connector or a publicly reachable MCP server. It must run wherever the Agent's supported MCP execution environment can launch local processes. Search pagination requires this branch's updated CLI. Local index results may not cover message bodies unless a user has explicitly enabled body caching. No background mailbox watcher or guaranteed push notification is included. For production use, test with a dedicated mailbox and review access restrictions.
 
