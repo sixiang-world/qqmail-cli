@@ -2,6 +2,7 @@ package cli
 
 import (
     "os"
+    "encoding/json"
     "os/exec"
     "path/filepath"
     "fmt"
