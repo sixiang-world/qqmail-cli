@@ -2,6 +2,10 @@ package cli
 
 import (
     "os"
+    "os/exec"
+    "path/filepath"
+    "fmt"
+    "strings"
     "sync"
     "testing"
     "time"
@@ -75,5 +79,45 @@ func TestAutoSendSharedGlobalCounterAcrossAccounts(t *testing.T) {
 	if err:=reserveAutoSend(second,now);err!=nil{t.Fatal(err)}
 	if err:=reserveAutoSend(first,now);err==nil{
 		t.Fatal("shared global daily cap bypassed using another account")
+	}
+}
+
+func TestAutoSendReservationSubprocessHelper(t *testing.T) {
+	path := os.Getenv("QQMAIL_TEST_AUTOSEND_PATH")
+	if path == "" { return }
+	autoSendStatePath = func() (string,error) {return path,nil}
+	named := account.Named{AutoSend:true,DailyAutoLimit:4}
+	err := reserveAutoSend(named,time.Date(2026,11,6,12,0,0,0,time.Local))
+	if err == nil {return}
+	if errmap.Classify(err).Kind != errmap.PolicyDenied {
+		t.Fatalf("reservation error: %v",err)
+	}
+	// The parent recognizes the intentional cap denial as a successful helper exit.
+}
+
+func TestAutoSendQuotaIndependentProcesses(t *testing.T) {
+	if os.Getenv("QQMAIL_TEST_AUTOSEND_PATH")!="" {t.Skip("helper process")}
+	path:=filepath.Join(t.TempDir(),"autosend-state.json")
+	const count=12
+	type result struct{stdout string;err error}
+	outcomes:=make(chan result,count)
+	for i:=0;i<count;i++ {
+		go func(){
+			cmd:=exec.Command(os.Args[0],"-test.run=^TestAutoSendReservationSubprocessHelper$")
+			cmd.Env=append(os.Environ(),"QQMAIL_TEST_AUTOSEND_PATH="+path)
+			out,err:=cmd.CombinedOutput()
+			outcomes<-result{stdout:string(out),err:err}
+		}()
+	}
+	for i:=0;i<count;i++ {
+		r:=<-outcomes
+		if r.err!=nil{t.Fatalf("subprocess reservation failed: %v %s",r.err,r.stdout)}
+	}
+	raw,err:=os.ReadFile(path)
+	if err!=nil{t.Fatal(err)}
+	var state autoSendState
+	if err:=json.Unmarshal(raw,&state);err!=nil{t.Fatal(err)}
+	if state.Count!=4 || state.Date!="2026-11-06"{
+		t.Fatal(fmt.Sprintf("cross-process cap bypassed: %+v / %s",state,strings.TrimSpace(string(raw))))
 	}
 }
