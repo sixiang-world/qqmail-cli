@@ -27,6 +27,7 @@ jobs:
       - run: go test ./...
       - run: go vet ./...
       - run: go build ./cmd/qqmail-cli
+      - run: go build ./cmd/qqmail-mcp
 
   lint:
     runs-on: ubuntu-latest
