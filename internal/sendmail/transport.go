@@ -33,11 +33,15 @@ func Send(ctx context.Context, named account.Named, authCode string, draft Draft
 		return classifySMTP(err)
 	}
 	if err := client.SendMail(draft.From.Address, Recipients(draft), bytes.NewReader(raw)); err != nil {
-		return classifySMTP(err)
+		// A transport failure during DATA may happen after server acceptance.
+		// Never present it as a retryable network error to an Agent.
+		var smtpErr *smtp.SMTPError
+		if errors.As(err, &smtpErr) { return classifySMTP(err) }
+		return &errmap.Error{Kind: errmap.DeliveryUncertain, Message: "SMTP 投递结果不确定，禁止自动重试", Suggestion: "请人工核对已发送邮件或收件端后再决定是否重发", Cause: err}
 	}
-	if err := client.Quit(); err != nil {
-		return classifySMTP(err)
-	}
+	// The server has already accepted the message. A failed QUIT must not
+	// turn an accepted delivery into a retryable failure.
+	_ = client.Quit()
 	return nil
 }
 

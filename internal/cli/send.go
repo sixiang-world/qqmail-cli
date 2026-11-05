@@ -422,17 +422,14 @@ func runDraft(rt *Runtime, cmd *cobra.Command, named account.Named, draft sendma
 		return err
 	}
 	defer func() { _ = store.Close() }()
+	if auto {
+		// Reserve before SMTP: a crash or concurrent Agent cannot undercount.
+		// A failed/uncertain send retains the reservation conservatively.
+		if err := reserveAutoSend(named, time.Now()); err != nil { return err }
+	}
 	service := policy.NewMailService(rt.SendMail, store)
 	if err := service.Send(ctx, named, authCode, draft, raw, commandName(cmd)); err != nil {
 		return err
-	}
-	if auto {
-		// Only auto sends count against the daily quota, and a counter
-		// failure never masks the successful send — a sanitized hint on
-		// stderr is the whole surface.
-		if err := bumpAutoSendCount(time.Now()); err != nil {
-			_, _ = fmt.Fprintf(rt.Err, "自动发送计数更新失败：%s\n", output.SanitizeHuman(err.Error()))
-		}
 	}
 	data["sent"] = true
 	if rt.JSON {

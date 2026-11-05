@@ -20,6 +20,7 @@ const (
 	AuthCodeMissing   Kind = "auth_code_missing"
 	ServiceNotEnabled Kind = "service_not_enabled"
 	Network           Kind = "network"
+	DeliveryUncertain Kind = "delivery_uncertain"
 	TLS               Kind = "tls"
 	RateLimited       Kind = "rate_limited"
 	NotFound          Kind = "not_found"
@@ -108,7 +109,7 @@ func Details(err error) (output.Error, int) {
 		return out, output.ExitAuth
 	case ServiceNotEnabled:
 		return out, output.ExitServiceNotEnabled
-	case Network:
+	case Network, DeliveryUncertain:
 		return out, output.ExitNetwork
 	case TLS:
 		return out, output.ExitTLS
