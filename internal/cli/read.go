@@ -60,6 +60,7 @@ type envelopeOptions struct {
 	Before    string
 	Limit     int
 	BeforeUID uint32
+	ExpectedUIDValidity uint32
 }
 
 func newEnvelopeCommand(rt *Runtime) *cobra.Command {
@@ -74,6 +75,7 @@ func newEnvelopeCommand(rt *Runtime) *cobra.Command {
 	cmd.Flags().StringVar(&opts.Before, "before", "", "upper time bound (24h, 7d) or YYYY-MM-DD")
 	cmd.Flags().IntVar(&opts.Limit, "limit", 20, "maximum messages (1-500)")
 	cmd.Flags().Uint32Var(&opts.BeforeUID, "before-uid", 0, "return UIDs lower than this cursor")
+	cmd.Flags().Uint32Var(&opts.ExpectedUIDValidity, "expected-uidvalidity", 0, "reject a stale mailbox generation (0 disables the guard)")
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		if opts.Limit < 1 || opts.Limit > 500 {
 			return &errmap.Error{Kind: errmap.Usage, Message: "--limit 必须在 1 到 500 之间"}
@@ -93,7 +95,7 @@ func newEnvelopeCommand(rt *Runtime) *cobra.Command {
 			return err
 		}
 		defer func() { _ = reader.Logout(context.Background()) }()
-		filter := imapx.SearchFilter{Unread: opts.Unread, From: opts.From, To: opts.To, Subject: opts.Subject, Since: since, Before: before, BeforeUID: opts.BeforeUID, Limit: opts.Limit}
+		filter := imapx.SearchFilter{Unread: opts.Unread, From: opts.From, To: opts.To, Subject: opts.Subject, Since: since, Before: before, BeforeUID: opts.BeforeUID, ExpectedUIDValidity: opts.ExpectedUIDValidity, Limit: opts.Limit}
 		envelopes, windowMin, mode, err := listEnvelopes(ctx, reader, rt.Folder, filter)
 		if err != nil {
 			return err
@@ -139,6 +141,9 @@ func listEnvelopes(ctx context.Context, reader imapx.Reader, folder string, filt
 	uidValidity, _, err := reader.Examine(ctx, folder)
 	if err != nil {
 		return nil, 0, "server", err
+	}
+	if filter.ExpectedUIDValidity != 0 && uidValidity != filter.ExpectedUIDValidity {
+		return nil, 0, "server", &errmap.Error{Kind: errmap.StaleID, Message: "邮箱 UIDVALIDITY 已改变，请丢弃旧分页游标并重新列出"}
 	}
 	mode := "server"
 	searchFilter := filter

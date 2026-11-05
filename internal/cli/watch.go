@@ -28,13 +28,21 @@ type watchEvent struct {
 func newWatchCommand(rt *Runtime) *cobra.Command {
 	var jsonl, once bool
 	var interval time.Duration
+	var resumeUID, resumeValidity uint32
 	cmd := &cobra.Command{Use: "watch", Short: "Poll for new UIDs and emit one NDJSON event per change", Args: cobra.NoArgs}
 	cmd.Flags().BoolVar(&jsonl, "jsonl", false, "required: emit newline-delimited JSON events")
 	cmd.Flags().DurationVar(&interval, "interval", 60*time.Second, "poll interval (minimum 5s)")
 	cmd.Flags().BoolVar(&once, "once", false, "poll once and exit (for automation and tests)")
+	cmd.Flags().Uint32Var(&resumeUID, "resume-uid", 0, "resume from last observed UID (requires --resume-uidvalidity)")
+	cmd.Flags().Uint32Var(&resumeValidity, "resume-uidvalidity", 0, "mailbox UIDVALIDITY for --resume-uid")
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		if !jsonl {
 			return &errmap.Error{Kind: errmap.Usage, Message: "watch 要求显式指定 --jsonl"}
+		}
+		hasUID := cmd.Flags().Changed("resume-uid")
+		hasValidity := cmd.Flags().Changed("resume-uidvalidity")
+		if hasUID != hasValidity || (hasUID && resumeValidity == 0) {
+			return &errmap.Error{Kind: errmap.Usage, Message: "断点恢复必须同时指定 --resume-uid（允许为 0）和非零 --resume-uidvalidity"}
 		}
 		if !once && interval < 5*time.Second {
 			return &errmap.Error{Kind: errmap.Usage, Message: "--interval 不得短于 5s"}
@@ -46,7 +54,8 @@ func newWatchCommand(rt *Runtime) *cobra.Command {
 			return err
 		}
 		defer func() { _ = reader.Logout(context.Background()) }()
-		watermark, uidValidity := uint32(0), uint32(0)
+		watermark, uidValidity := resumeUID, resumeValidity
+		if !hasUID {
 		if inspection, inspectErr := rt.IndexInspect(named.Name); inspectErr == nil && inspection.Exists {
 			store, openErr := rt.IndexOpen(named.Name, false)
 			if openErr != nil {
@@ -60,6 +69,7 @@ func newWatchCommand(rt *Runtime) *cobra.Command {
 			if ok {
 				watermark, uidValidity = state.LastSeenUID, state.UIDValidity
 			}
+		}
 		}
 		encoder := json.NewEncoder(rt.Out)
 		poll := func() error {
@@ -102,8 +112,17 @@ func pollWatch(ctx context.Context, reader imapx.Reader, folder string, watermar
 		return nil, err
 	}
 	now := time.Now().UTC()
-	if *knownValidity == 0 || *knownValidity != uidValidity {
+	if *knownValidity != 0 && *knownValidity != uidValidity {
+		// Never acknowledge messages in the new generation while notifying
+		// consumers of a reset. The caller must checkpoint (0, uidValidity)
+		// after handling folder_reset, then rescan the new generation.
 		previous := *knownValidity
+		*watermark = 0
+		*knownValidity = uidValidity
+		return []watchEvent{{SchemaVersion: "1", Event: "folder_reset", ObservedAt: now, Folder: folder, UIDValidity: uidValidity, PreviousUIDValidity: previous}}, nil
+	}
+	if *knownValidity == 0 {
+		// No checkpoint: preserve the historical bootstrap (ignore old mail).
 		latest, err := reader.Search(ctx, imapx.SearchFilter{Limit: 1})
 		if err != nil {
 			return nil, err
@@ -113,9 +132,6 @@ func pollWatch(ctx context.Context, reader imapx.Reader, folder string, watermar
 			*watermark = latest[0]
 		}
 		*knownValidity = uidValidity
-		if previous != 0 {
-			return []watchEvent{{SchemaVersion: "1", Event: "folder_reset", ObservedAt: now, Folder: folder, UIDValidity: uidValidity, PreviousUIDValidity: previous}}, nil
-		}
 		return []watchEvent{}, nil
 	}
 	previous := *watermark

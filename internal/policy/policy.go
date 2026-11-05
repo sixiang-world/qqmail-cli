@@ -48,7 +48,7 @@ func (s *MailService) Send(ctx context.Context, named account.Named, authCode st
 		result = "failed"
 	}
 	if _, auditErr := s.audit.RecordAudit(ctx, index.AuditEntry{Command: command, Action: "send", Result: result}); auditErr != nil && err == nil {
-		return auditErr
+		return &errmap.Error{Kind: errmap.DeliveryUncertain, Message: "SMTP 已接受邮件，但投递后审计失败；禁止重试", Suggestion: "人工检查已发送记录后修复审计存储", Cause: auditErr}
 	}
 	return err
 }
