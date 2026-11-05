@@ -5,8 +5,7 @@ import (
     "encoding/json"
     "os/exec"
     "path/filepath"
-    "fmt"
-    "strings"
+        "strings"
     "sync"
     "testing"
     "time"
@@ -119,6 +118,6 @@ func TestAutoSendQuotaIndependentProcesses(t *testing.T) {
 	var state autoSendState
 	if err:=json.Unmarshal(raw,&state);err!=nil{t.Fatal(err)}
 	if state.Count!=4 || state.Date!="2026-11-06"{
-		t.Fatal(fmt.Sprintf("cross-process cap bypassed: %+v / %s",state,strings.TrimSpace(string(raw))))
+		t.Fatalf("cross-process cap bypassed: %+v / %s",state,strings.TrimSpace(string(raw)))
 	}
 }
