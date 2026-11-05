@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/situker/qqmail-cli/internal/imapx"
+	"github.com/situker/qqmail-cli/internal/errmap"
 	"github.com/situker/qqmail-cli/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -21,7 +22,7 @@ func searchModeForField() string {
 // mailbox. Security invariant: the query travels only inside the SEARCH
 // command — never into logs, audit records or error messages, whose wording is
 // fixed and does not echo the query.
-func runServerSearch(rt *Runtime, cmd *cobra.Command, query string, limit int, beforeUID uint32) error {
+func runServerSearch(rt *Runtime, cmd *cobra.Command, query string, limit int, beforeUID uint32, expectedValidity uint32) error {
 	ctx, cancel := rt.context()
 	defer cancel()
 	reader, named, err := rt.connect(ctx)
@@ -32,6 +33,9 @@ func runServerSearch(rt *Runtime, cmd *cobra.Command, query string, limit int, b
 	uidValidity, _, err := reader.Examine(ctx, rt.Folder)
 	if err != nil {
 		return err
+	}
+	if expectedValidity != 0 && expectedValidity != uidValidity {
+		return &errmap.Error{Kind: errmap.StaleID, Message: "邮箱 UIDVALIDITY 已改变，请丢弃旧分页游标并重新搜索"}
 	}
 	uids, err := reader.Search(ctx, imapx.SearchFilter{Text: query, Limit: limit, BeforeUID: beforeUID})
 	if err != nil {

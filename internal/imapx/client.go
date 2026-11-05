@@ -35,6 +35,7 @@ type SearchFilter struct {
 	Since     time.Time
 	Before    time.Time
 	BeforeUID uint32
+	ExpectedUIDValidity uint32 // optional strict generation precondition
 	AfterUID  uint32
 	Limit     int
 	Text      string // 仅供 F1 服务端搜索使用；envelope list 不设置

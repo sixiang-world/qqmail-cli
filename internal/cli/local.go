@@ -59,12 +59,13 @@ func newSyncCommand(rt *Runtime) *cobra.Command {
 func newLocalSearchCommand(rt *Runtime) *cobra.Command {
 	var local, server bool
 	var limit int
-	var beforeUID uint32
+	var beforeUID, expectedValidity uint32
 	cmd := &cobra.Command{Use: "search <query>", Args: cobra.ExactArgs(1), Short: "Search the local FTS5 index or the IMAP server"}
 	cmd.Flags().BoolVar(&local, "local", false, "search the local index without contacting the server")
 	cmd.Flags().BoolVar(&server, "server", false, "search the IMAP server without the local index")
 	cmd.Flags().IntVar(&limit, "limit", 50, "maximum hits (1-500)")
 	cmd.Flags().Uint32Var(&beforeUID, "before-uid", 0, "server cursor for searching older UIDs")
+	cmd.Flags().Uint32Var(&expectedValidity, "expected-uidvalidity", 0, "reject a stale mailbox generation (0 disables the guard)")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if local == server {
 			return &errmap.Error{Kind: errmap.Usage, Message: "search 需要 --local 或 --server 恰选其一"}
@@ -73,9 +74,9 @@ func newLocalSearchCommand(rt *Runtime) *cobra.Command {
 			return &errmap.Error{Kind: errmap.Usage, Message: "--limit 必须在 1 到 500 之间"}
 		}
 		if server {
-			return runServerSearch(rt, cmd, args[0], limit, beforeUID)
+			return runServerSearch(rt, cmd, args[0], limit, beforeUID, expectedValidity)
 		}
-		if beforeUID != 0 {
+		if beforeUID != 0 || expectedValidity != 0 {
 			return &errmap.Error{Kind: errmap.Usage, Message: "--before-uid requires --server"}
 		}
 		_, _, named, err := rt.loadAccount()

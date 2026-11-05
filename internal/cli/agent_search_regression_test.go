@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/situker/qqmail-cli/internal/imapx"
+	"github.com/situker/qqmail-cli/internal/errmap"
 	"github.com/situker/qqmail-cli/internal/mailmodel"
 )
 
@@ -69,4 +70,14 @@ func TestServerSearchGenerationAndShowChain(t *testing.T) {
 	}
 	if !seen[42] || !seen[1] || len(seen)!=2 {t.Fatalf("pagination lost messages: %v",seen)}
 	if out:=runCLIReader(t,reader,"search","receipt","--server","--json","--before-uid","1"); !strings.Contains(out,`"envelopes":[]`) {t.Fatalf("cursor exhausted: %s",out)}
+}
+
+func TestSearchRejectsStalePaginationGeneration(t *testing.T) {
+	reader:=generationReader{}
+	_,err:=tryRunCLI(t,reader,[]string{"search","receipt","--server","--json","--before-uid","42","--expected-uidvalidity","776"})
+	if err==nil{t.Fatal("old UIDVALIDITY cursor accepted")}
+	_,code:=errmap.Details(err)
+	if code!=40{t.Fatalf("wrong stale cursor code: %d, %v",code,err)}
+	_,err=tryRunCLI(t,reader,[]string{"envelope","list","--json","--expected-uidvalidity","776"})
+	if err==nil{t.Fatal("old envelope cursor accepted")}
 }

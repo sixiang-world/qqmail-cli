@@ -40,6 +40,8 @@ func TestRejectUnknownOrUnsafeArgs(t *testing.T) {
         {"qqmail_search",`{"query":"x","limit":101}`},
         {"qqmail_list",`{"limit":-1}`},
         {"qqmail_list",`{"limit":0}`},
+        {"qqmail_list",`{"expected_uidvalidity":0}`},
+        {"qqmail_search",`{"query":"a","mode":"local","expected_uidvalidity":777}`},
         {"qqmail_search",`{"query":"x","limit":0}`},
         {"qqmail_search",`{"query":"x","limit":1.5}`},
         {"qqmail_show",`{"id":null}`},
@@ -128,4 +130,15 @@ func TestInvalidRequestID(t *testing.T) {
 	var out bytes.Buffer
 	if err:=serve(strings.NewReader(`{"jsonrpc":"2.0","id":{},"method":"ping"}`+"\n"),&out);err!=nil{t.Fatal(err)}
 	if !strings.Contains(out.String(),`"code":-32600`){t.Fatal(out.String())}
+}
+
+func TestMCPGenerationPreconditionArguments(t *testing.T) {
+	for _,name:=range []string{"qqmail_list","qqmail_search"} {
+		raw:=`{"expected_uidvalidity":777}`
+		if name=="qqmail_search"{raw=`{"query":"invoice","expected_uidvalidity":777}`}
+		args,err:=toolArguments(name,params(raw))
+		if err!=nil || !strings.Contains(strings.Join(args," "),"--expected-uidvalidity 777"){
+			t.Fatalf("%s missing generation guard: %v %v",name,args,err)
+		}
+	}
 }

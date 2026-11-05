@@ -2,7 +2,7 @@
 
 ## Search coverage
 
-Use `search "phrase" --server --json` for QQ IMAP BODY search without first building a local index. The result includes a `page.next_before_uid` cursor: pass it back as `--before-uid` to inspect older matches. A cursor of zero means no further UID cursor was returned. BODY search does not match sender or subject by itself; use `envelope list --from` or `--subject` for metadata queries.
+Use `search "phrase" --server --json` for QQ IMAP BODY search without first building a local index. The result includes a `page.next_before_uid` cursor: pass it back as `--before-uid` to inspect older matches. A cursor of zero means no further UID cursor was returned. The server search page also returns `uidvalidity`; on subsequent pages pass `--expected-uidvalidity <value>` together with `--before-uid` so a mailbox reset is rejected with `stale_id` rather than silently mixing UID generations. The envelope-list command supports the same optional strict precondition, even though its legacy response does not yet expose a page-level generation for empty pages. BODY search does not match sender or subject by itself; use `envelope list --from` or `--subject` for metadata queries.
 
 The local FTS5 index is **not automatically a complete copy of every message body**: by default `sync` stores metadata. Only explicit `sync --cache-previews` or `sync --cache-bodies` stores content, without encryption. For exhaustive claims, verify cache coverage using `cache inspect --json`, and fall back to the server where appropriate.
 

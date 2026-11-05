@@ -39,3 +39,5 @@ Every tool call is constrained to a known set of CLI arguments, uses a 50-second
 Auto-send remains a separate CLI feature and is intentionally **not** exposed through MCP. Its counter now reserves quota before SMTP submission under an interprocess lock; attempted sends count even when delivery is uncertain. SMTP transport errors are not safe to retry automatically after submission begins; the sender should inspect the Sent folder before any manual retry. The read-only MCP adapter never sends mail.
 
 This implementation follows JSON-RPC 2.0 over newline-delimited stdio messages with MCP initialize, ping, tools/list and tools/call methods. Clients requiring additional MCP features may need a fuller adapter. No auth tokens are accepted on MCP messages.
+
+For paginated server searches, carry the returned `page.uidvalidity` into `expected_uidvalidity` on the next `qqmail_search` call. A mismatched mailbox generation returns a structured `stale_id` error; start over rather than reusing old UID cursors. `qqmail_list` also accepts an optional generation precondition, but its legacy envelope-page response does not yet report the generation for empty pages.

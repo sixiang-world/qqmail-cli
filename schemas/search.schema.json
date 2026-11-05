@@ -78,6 +78,10 @@
                     "next_before_uid": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "uidvalidity": {
+                      "type": "integer",
+                      "minimum": 0
                     }
                   }
                 },
