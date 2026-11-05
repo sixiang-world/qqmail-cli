@@ -220,7 +220,9 @@ func serve(in io.Reader,out io.Writer) error {
 			case <-ctx.Done():return
 			}
 		}
-		select {case lines<-incoming{err:scanner.Err()}:case <-ctx.Done():}
+		if err := scanner.Err(); err != nil {
+			select {case lines<-incoming{err:err}:case <-ctx.Done():}
+		}
 	}()
 	var workers sync.WaitGroup
 	var mu sync.Mutex
