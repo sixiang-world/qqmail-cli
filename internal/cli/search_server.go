@@ -21,7 +21,7 @@ func searchModeForField() string {
 // mailbox. Security invariant: the query travels only inside the SEARCH
 // command — never into logs, audit records or error messages, whose wording is
 // fixed and does not echo the query.
-func runServerSearch(rt *Runtime, cmd *cobra.Command, query string, limit int) error {
+func runServerSearch(rt *Runtime, cmd *cobra.Command, query string, limit int, beforeUID uint32) error {
 	ctx, cancel := rt.context()
 	defer cancel()
 	reader, named, err := rt.connect(ctx)
@@ -33,7 +33,7 @@ func runServerSearch(rt *Runtime, cmd *cobra.Command, query string, limit int) e
 	if err != nil {
 		return err
 	}
-	uids, err := reader.Search(ctx, imapx.SearchFilter{Text: query, Limit: limit})
+	uids, err := reader.Search(ctx, imapx.SearchFilter{Text: query, Limit: limit, BeforeUID: beforeUID})
 	if err != nil {
 		// A tagged NO/BAD is the server refusing the search criterion, not a
 		// transient fault: report it as a policy denial so the agent switches
@@ -46,7 +46,11 @@ func runServerSearch(rt *Runtime, cmd *cobra.Command, query string, limit int) e
 	if err != nil {
 		return err
 	}
-	data := map[string]any{"envelopes": envelopes}
+	nextBeforeUID := uint32(0)
+	for _, uid := range uids {
+		if nextBeforeUID == 0 || uid < nextBeforeUID { nextBeforeUID = uid }
+	}
+	data := map[string]any{"envelopes": envelopes, "query": query, "page": map[string]any{"next_before_uid": nextBeforeUID}}
 	if rt.JSON {
 		return writeDetailed(rt, cmd, data, nil, output.Meta{Account: named.Name, SearchMode: searchModeForField()})
 	}
