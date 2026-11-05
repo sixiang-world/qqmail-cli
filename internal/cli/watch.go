@@ -39,8 +39,10 @@ func newWatchCommand(rt *Runtime) *cobra.Command {
 		if !jsonl {
 			return &errmap.Error{Kind: errmap.Usage, Message: "watch 要求显式指定 --jsonl"}
 		}
-		if (resumeUID == 0) != (resumeValidity == 0) {
-			return &errmap.Error{Kind: errmap.Usage, Message: "断点恢复必须同时指定非零 --resume-uid 和 --resume-uidvalidity"}
+		hasUID := cmd.Flags().Changed("resume-uid")
+		hasValidity := cmd.Flags().Changed("resume-uidvalidity")
+		if hasUID != hasValidity || (hasUID && resumeValidity == 0) {
+			return &errmap.Error{Kind: errmap.Usage, Message: "断点恢复必须同时指定 --resume-uid（允许为 0）和非零 --resume-uidvalidity"}
 		}
 		if !once && interval < 5*time.Second {
 			return &errmap.Error{Kind: errmap.Usage, Message: "--interval 不得短于 5s"}
@@ -53,7 +55,7 @@ func newWatchCommand(rt *Runtime) *cobra.Command {
 		}
 		defer func() { _ = reader.Logout(context.Background()) }()
 		watermark, uidValidity := resumeUID, resumeValidity
-		if resumeUID == 0 {
+		if !hasUID {
 		if inspection, inspectErr := rt.IndexInspect(named.Name); inspectErr == nil && inspection.Exists {
 			store, openErr := rt.IndexOpen(named.Name, false)
 			if openErr != nil {
@@ -110,8 +112,17 @@ func pollWatch(ctx context.Context, reader imapx.Reader, folder string, watermar
 		return nil, err
 	}
 	now := time.Now().UTC()
-	if *knownValidity == 0 || *knownValidity != uidValidity {
+	if *knownValidity != 0 && *knownValidity != uidValidity {
+		// Never acknowledge messages in the new generation while notifying
+		// consumers of a reset. The caller must checkpoint (0, uidValidity)
+		// after handling folder_reset, then rescan the new generation.
 		previous := *knownValidity
+		*watermark = 0
+		*knownValidity = uidValidity
+		return []watchEvent{{SchemaVersion: "1", Event: "folder_reset", ObservedAt: now, Folder: folder, UIDValidity: uidValidity, PreviousUIDValidity: previous}}, nil
+	}
+	if *knownValidity == 0 {
+		// No checkpoint: preserve the historical bootstrap (ignore old mail).
 		latest, err := reader.Search(ctx, imapx.SearchFilter{Limit: 1})
 		if err != nil {
 			return nil, err
@@ -121,9 +132,6 @@ func pollWatch(ctx context.Context, reader imapx.Reader, folder string, watermar
 			*watermark = latest[0]
 		}
 		*knownValidity = uidValidity
-		if previous != 0 {
-			return []watchEvent{{SchemaVersion: "1", Event: "folder_reset", ObservedAt: now, Folder: folder, UIDValidity: uidValidity, PreviousUIDValidity: previous}}, nil
-		}
 		return []watchEvent{}, nil
 	}
 	previous := *watermark

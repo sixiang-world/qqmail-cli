@@ -29,7 +29,7 @@ func runServerSearch(rt *Runtime, cmd *cobra.Command, query string, limit int, b
 		return err
 	}
 	defer func() { _ = reader.Logout(context.Background()) }()
-	_, uidValidity, err := reader.Examine(ctx, rt.Folder)
+	uidValidity, _, err := reader.Examine(ctx, rt.Folder)
 	if err != nil {
 		return err
 	}
@@ -50,7 +50,7 @@ func runServerSearch(rt *Runtime, cmd *cobra.Command, query string, limit int, b
 	for _, uid := range uids {
 		if nextBeforeUID == 0 || uid < nextBeforeUID { nextBeforeUID = uid }
 	}
-	data := map[string]any{"envelopes": envelopes, "query": query, "page": map[string]any{"next_before_uid": nextBeforeUID}}
+	data := map[string]any{"envelopes": envelopes, "query": query, "page": map[string]any{"next_before_uid": nextBeforeUID, "uidvalidity": uidValidity}}
 	if rt.JSON {
 		return writeDetailed(rt, cmd, data, nil, output.Meta{Account: named.Name, SearchMode: searchModeForField()})
 	}

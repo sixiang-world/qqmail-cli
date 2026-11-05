@@ -65,8 +65,12 @@ func TestPollWatchEmitsFolderResetOnUIDValidityChange(t *testing.T) {
 	if err != nil || len(events) != 1 || events[0].Event != "folder_reset" || events[0].PreviousUIDValidity != 9 {
 		t.Fatalf("reset events=%+v err=%v", events, err)
 	}
-	if validity != 10 || watermark != 6 {
-		t.Fatalf("reset did not rebase watermark: validity=%d watermark=%d", validity, watermark)
+	if validity != 10 || watermark != 0 {
+		t.Fatalf("reset incorrectly acknowledged new messages: validity=%d watermark=%d", validity, watermark)
+	}
+	next, err := pollWatch(context.Background(), watchReader{searchResult: []uint32{6}}, "INBOX", &watermark, &validity)
+	if err != nil || len(next) != 1 || next[0].Envelope.UID != 6 {
+		t.Fatalf("new generation messages skipped: events=%+v err=%v", next, err)
 	}
 	raw, err := json.Marshal(events[0])
 	if err != nil {
