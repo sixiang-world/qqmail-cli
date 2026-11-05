@@ -91,8 +91,7 @@ func TestMCPStdioRequestAndNotifications(t *testing.T) {
 {"jsonrpc":"2.0","method":"notifications/initialized"}
 {"jsonrpc":"2.0","id":"two","method":"tools/list"}
 {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"qqmail_list","arguments":{"limit":0}}}
-{"jsonrpc":"2.0","id":4,"method":"unknown"}
-`)
+{"jsonrpc":"2.0","id":4,"method":"unknown"}`)
 	var out bytes.Buffer
 	if err:=serve(in,&out);err!=nil{t.Fatal(err)}
 	lines:=strings.Split(strings.TrimSpace(out.String()),"\n")
@@ -109,7 +108,7 @@ func TestMCPDisconnectCancelsHangingCLI(t *testing.T) {
 	if runtime.GOOS=="windows"{t.Skip("POSIX script fixture")}
 	dir:=t.TempDir()
 	path:=filepath.Join(dir,"hang-cli")
-	if err:=os.WriteFile(path,[]byte("#!/bin/sh\nsleep 30\n"),0o700);err!=nil{t.Fatal(err)}
+	if err:=os.WriteFile(path,[]byte("#!/bin/sh\nexec sleep 30\n"),0o700);err!=nil{t.Fatal(err)}
 	t.Setenv("QQMAIL_CLI_BIN",path)
 	r,w:=io.Pipe()
 	var out bytes.Buffer

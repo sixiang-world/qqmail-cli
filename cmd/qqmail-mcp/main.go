@@ -188,16 +188,6 @@ func (w *responseWriter) send(id json.RawMessage,result any,code int,message str
 	_=w.out.WriteByte('\n')
 	_=w.out.Flush()
 }
-func (w *responseWriter) notify(method string, params any) {
-	raw,err:=json.Marshal(map[string]any{"jsonrpc":"2.0","method":method,"params":params})
-	if err!=nil{return}
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	_,_=w.out.Write(raw)
-	_=w.out.WriteByte('\n')
-	_=w.out.Flush()
-}
-
 func validID(raw json.RawMessage) bool {
 	if len(raw)==0{return false}
 	var v any
