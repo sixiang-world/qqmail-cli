@@ -17,3 +17,15 @@ Do not automatically retry send, reply or forward on SMTP timeouts, connection f
 ## Local MCP adapter
 
 See [MCP_READONLY.md](MCP_READONLY.md) for the experimental read-only stdio adapter. It cannot send messages, perform server mutations or authorize a user. It is not itself a ChatGPT hosted connector.
+
+## Restartable new-mail polling
+
+`watch --jsonl --once` can resume from a caller-maintained checkpoint:
+
+```sh
+qqmail-cli watch --jsonl --once --resume-uid 128 --resume-uidvalidity 42
+```
+
+Pass **both** the last acknowledged UID and the matching mailbox UIDVALIDITY. The CLI uses these coordinates instead of looking at the local index. Every `new_message` event contains the message UID and UIDVALIDITY. After downstream processing succeeds, persist these coordinates in the automation's own durable state. If UIDVALIDITY changes, the CLI emits a `folder_reset` event; the old checkpoint must not be reused. This is a read-only resume interface, not a built-in scheduler or a transactional delivery queue.
+
+Without a checkpoint, the first polling run may initialize at the latest message without emitting historical events. Consumers that need at-least-once processing should maintain their checkpoint externally; acknowledging an event before processing it risks missing that message on a crash.
