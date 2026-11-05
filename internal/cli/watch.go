@@ -28,13 +28,19 @@ type watchEvent struct {
 func newWatchCommand(rt *Runtime) *cobra.Command {
 	var jsonl, once bool
 	var interval time.Duration
+	var resumeUID, resumeValidity uint32
 	cmd := &cobra.Command{Use: "watch", Short: "Poll for new UIDs and emit one NDJSON event per change", Args: cobra.NoArgs}
 	cmd.Flags().BoolVar(&jsonl, "jsonl", false, "required: emit newline-delimited JSON events")
 	cmd.Flags().DurationVar(&interval, "interval", 60*time.Second, "poll interval (minimum 5s)")
 	cmd.Flags().BoolVar(&once, "once", false, "poll once and exit (for automation and tests)")
+	cmd.Flags().Uint32Var(&resumeUID, "resume-uid", 0, "resume from last observed UID (requires --resume-uidvalidity)")
+	cmd.Flags().Uint32Var(&resumeValidity, "resume-uidvalidity", 0, "mailbox UIDVALIDITY for --resume-uid")
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		if !jsonl {
 			return &errmap.Error{Kind: errmap.Usage, Message: "watch 要求显式指定 --jsonl"}
+		}
+		if (resumeUID == 0) != (resumeValidity == 0) {
+			return &errmap.Error{Kind: errmap.Usage, Message: "断点恢复必须同时指定非零 --resume-uid 和 --resume-uidvalidity"}
 		}
 		if !once && interval < 5*time.Second {
 			return &errmap.Error{Kind: errmap.Usage, Message: "--interval 不得短于 5s"}
@@ -46,7 +52,8 @@ func newWatchCommand(rt *Runtime) *cobra.Command {
 			return err
 		}
 		defer func() { _ = reader.Logout(context.Background()) }()
-		watermark, uidValidity := uint32(0), uint32(0)
+		watermark, uidValidity := resumeUID, resumeValidity
+		if resumeUID == 0 {
 		if inspection, inspectErr := rt.IndexInspect(named.Name); inspectErr == nil && inspection.Exists {
 			store, openErr := rt.IndexOpen(named.Name, false)
 			if openErr != nil {
@@ -60,6 +67,7 @@ func newWatchCommand(rt *Runtime) *cobra.Command {
 			if ok {
 				watermark, uidValidity = state.LastSeenUID, state.UIDValidity
 			}
+		}
 		}
 		encoder := json.NewEncoder(rt.Out)
 		poll := func() error {
