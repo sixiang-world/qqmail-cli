@@ -90,7 +90,7 @@ $ qqmail-cli message show "m1_eyJmIjoiSU5CT1giLCJ2IjoxNDI1LCJ1Ijo4MzQ3fQ" \
 - **内嵌图读取闭环** —— `multipart/related` 邮件的 CID 图片可列出、可下载、转发不丢图。
 - **可验证的诚实** —— QQ 搜索方言与草稿箱位置来自只读探针实测（[spikes/imap-dialect-probe](spikes/imap-dialect-probe/)），结论落档 `docs/compat/`；文件夹名编码修正为 RFC 3501 Modified UTF-7 并与 go-imap 序列化器做了差分验证。
 
-### v0.4.0 之后（已在 main，未发版）
+### v0.5.0（已发布）
 
 - **Agent 自动发送（autosend）** —— 账号配置 `auto_send = true` 后，allowlist 内的发送由 Agent 直接完成（跳过 TTY 确认）；`send_blacklist` 中的地址永不自动发送（回落完整人工门禁）；`daily_auto_limit` 每日限额（默认 50 封）+ 内容无关审计兜底。**三条线没有松动**：allowlist 之外发不出去、Agent 改不了任何名单、`QQMAIL_CLI_READONLY=1` 仍然一键全停。
 - **`--draft-file`** —— TOML 草稿文件承载整封信（to/subject/body/attach/format），Agent 生成草稿不再与 shell 引号搏斗；未知键名会被报错点名，拼错不会静默缺内容。
