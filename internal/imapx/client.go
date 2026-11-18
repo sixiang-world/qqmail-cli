@@ -28,16 +28,17 @@ const (
 )
 
 type SearchFilter struct {
-	Unread    bool
-	From      string
-	To        string
-	Subject   string
-	Since     time.Time
-	Before    time.Time
-	BeforeUID uint32
-	AfterUID  uint32
-	Limit     int
-	Text      string // 仅供 F1 服务端搜索使用；envelope list 不设置
+	Unread              bool
+	From                string
+	To                  string
+	Subject             string
+	Since               time.Time
+	Before              time.Time
+	BeforeUID           uint32
+	ExpectedUIDValidity uint32 // optional strict generation precondition
+	AfterUID            uint32
+	Limit               int
+	Text                string // 仅供 F1 服务端搜索使用；envelope list 不设置
 }
 
 // Reader is deliberately read-only. Its method whitelist is tested so server
@@ -228,6 +229,11 @@ func (c *Client) Examine(ctx context.Context, folder string) (uint32, uint32, er
 const ServerSearchField = "BODY"
 
 func (c *Client) Search(ctx context.Context, filter SearchFilter) ([]uint32, error) {
+	// UID 1 has no predecessors; do not turn an exhausted cursor into an
+	// unrestricted SEARCH. Also avoid overflowing AfterUID at MaxUint32.
+	if filter.BeforeUID == 1 || filter.AfterUID == ^uint32(0) {
+		return []uint32{}, nil
+	}
 	criteria := &imap.SearchCriteria{Since: filter.Since}
 	if !filter.Before.IsZero() {
 		criteria.Before = filter.Before
@@ -308,7 +314,10 @@ func bodySectionBytes(item *imapclient.FetchMessageBuffer, section *imap.FetchIt
 // it, so a watermark search with no new mail still returns the newest message;
 // without this filter watch/sync would re-announce it on every poll.
 func filterUIDWindow(ids []imap.UID, filter SearchFilter) []imap.UID {
-	if filter.AfterUID == 0 && filter.BeforeUID <= 1 {
+	if filter.BeforeUID == 1 || filter.AfterUID == ^uint32(0) {
+		return ids[:0]
+	}
+	if filter.AfterUID == 0 && filter.BeforeUID == 0 {
 		return ids
 	}
 	filtered := ids[:0]
@@ -538,4 +547,3 @@ func capStrings(caps imap.CapSet) []string {
 	sort.Strings(result)
 	return result
 }
-

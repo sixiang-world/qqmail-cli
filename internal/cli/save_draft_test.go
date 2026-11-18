@@ -83,7 +83,7 @@ func newSaveDraftRuntime(t *testing.T, stub *saveDraftMutatorStub, smtpCalls *in
 			return stub, nil
 		},
 		IndexOpen: func(string, bool) (*index.DB, error) {
-			return index.OpenPath(filepath.Join(t.TempDir(), "cache.db"), true)
+			return openTestCache(t, true)
 		},
 		SendMail: func(context.Context, account.Named, string, sendmail.Draft, []byte) error {
 			*smtpCalls++

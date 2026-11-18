@@ -2,12 +2,10 @@ package cli
 
 import (
 	"context"
-	"path/filepath"
 	"slices"
 	"testing"
 
 	"github.com/situker/qqmail-cli/internal/imapx"
-	"github.com/situker/qqmail-cli/internal/index"
 	"github.com/situker/qqmail-cli/internal/mailmodel"
 	"github.com/situker/qqmail-cli/internal/policy"
 )
@@ -60,7 +58,7 @@ func newPolicyFixture(t *testing.T) *policyFixture {
 	t.Helper()
 	t.Setenv(policy.ReadonlyEnv, "0")
 	stub := &policyMutatorStub{}
-	store, err := index.OpenPath(filepath.Join(t.TempDir(), "cache.db"), true)
+	store, err := openTestCache(t, true)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -4,7 +4,60 @@ All notable development changes are recorded here. Formal releases remain owner-
 
 ## Unreleased
 
-(nothing yet)
+### Added (2026-11-19 agent-bridge round)
+
+- `qqmail-mcp`: a local read-only stdio MCP adapter exposing five
+  allowlisted tools (folders, envelope list, message show, attachment
+  list, search) by shelling out to the CLI with `QQMAIL_CLI_READONLY=1`
+  forced, a strict argument allowlist, output caps and per-request
+  cancellation; the child's JSON envelope stays authoritative
+  (installation and scope: docs/MCP_READONLY.md).
+- `search --server` pagination: `--before-uid` cursor plus a `page`
+  object (`next_before_uid` + `uidvalidity`) in the JSON output, and
+  `--expected-uidvalidity` to refuse results from a stale mailbox
+  generation instead of silently paginating a renamed mailbox
+  (agent-side usage: docs/AGENT_READ_SEARCH.md).
+- `watch --resume-uid/--resume-uidvalidity`: an explicit read-only
+  checkpoint so a restarted watcher neither replays nor silently skips
+  mail; partial coordinate pairs are refused, and `folder_reset` no
+  longer acknowledges the new generation while notifying.
+- `delivery_uncertain` error kind (exit 20 / network, non-retryable):
+  used when the outcome of an SMTP DATA submission cannot be determined,
+  and when the post-delivery audit write fails after the server accepted
+  the message.
+
+### Fixed (2026-11-19 agent-bridge round)
+
+- `search --server` reported the selected message count as the mailbox
+  UIDVALIDITY (swapped `Examine` return values), so any consumer of that
+  field compared against a meaningless number.
+- An exhausted pagination cursor no longer degenerates into an
+  unconstrained IMAP SEARCH: `before_uid` 1 and `after_uid` MaxUint32
+  are answered locally as empty.
+- The read-only MCP bridge no longer surfaces a spurious JSON-RPC parse
+  error on clean stdio EOF, preserves the CLI's result envelope verbatim,
+  and cancels hanging CLI children on client disconnect.
+- search.schema.json's server-search envelopes now carry the same
+  per-field UNTRUSTED annotations as envelope.list, so an agent reading
+  only the search schema learns that subject/from/to/folder originate
+  from the mail server.
+
+### Security (2026-11-19 agent-bridge round)
+
+- The autosend quota is now reserved under a cross-process OS file lock
+  before SMTP submission and never refunded: a failed or uncertain send
+  still consumes the reservation, so concurrent agents cannot
+  under-count. A corrupt counter or a counter dated in the future (clock
+  rollback) refuses unattended sending outright (fail closed).
+- Atomic state writes fsync the containing directory on POSIX so the
+  counter survives crashes; Windows keeps the file-flush guarantee only.
+- SMTP transport failures during DATA are classified as
+  `delivery_uncertain` (never a retryable network error) unless the
+  server answered with a concrete SMTP error; a failed QUIT after
+  acceptance no longer turns a delivered message into a failure.
+- Go toolchain bumped to 1.26.11 (GO-2026-6859 net/http MaxBytesReader
+  race, GO-2026-6809 x509 intermediate distrust) with patched x/net
+  dependency family.
 
 ## 0.5.0 — 2026-10-07
 

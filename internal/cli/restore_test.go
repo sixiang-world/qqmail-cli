@@ -209,7 +209,7 @@ func TestRestoreExecuteMovesBackAndMatchesSchema(t *testing.T) {
 		DialMutator: func(context.Context, account.Named, string) (imapx.Mutator, error) {
 			return newScriptedRestoreMutator(fixtureMessageRaw()), nil
 		},
-		IndexOpen:  func(string, bool) (*index.DB, error) { return index.OpenPath(filepath.Join(t.TempDir(), "cache.db"), true) },
+		IndexOpen:  func(string, bool) (*index.DB, error) { return openTestCache(t, true) },
 		IsTerminal: func(io.Reader) bool { return true },
 	}
 	root := NewRoot(rt)

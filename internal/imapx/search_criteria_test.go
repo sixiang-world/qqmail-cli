@@ -169,3 +169,16 @@ func TestSearchServerRejectionMapsToPolicyDenied(t *testing.T) {
 		t.Fatalf("server rejection classified as %s, want policy_denied (err: %v)", kind, err)
 	}
 }
+
+func TestSearchExhaustedUIDCursorDoesNotReachServer(t *testing.T) {
+	f := newFixture(t)
+	for _, filter := range []SearchFilter{{BeforeUID: 1}, {BeforeUID: 1, AfterUID: 3}, {AfterUID: ^uint32(0)}} {
+		got, err := f.Client.Search(context.Background(), filter)
+		if err != nil || len(got) != 0 {
+			t.Fatalf("exhausted cursor %+v: %v %v", filter, got, err)
+		}
+	}
+	if line := f.LastSearchLine(); line != "" {
+		t.Fatalf("exhausted cursor caused unconstrained IMAP SEARCH: %s", line)
+	}
+}
