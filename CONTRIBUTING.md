@@ -4,7 +4,7 @@
 
 ## 开始前
 
-- 使用 Go 1.25 或更高版本。
+- 使用 Go 1.26 或更高版本。
 - 阅读 `README.md`、`SECURITY.md` 和与改动相关的 `docs/`。
 - Bug 使用仓库 Issue 模板，并只提供合成或脱敏数据。
 - 安全问题不要开公开 Issue，按 `SECURITY.md` 私密报告。

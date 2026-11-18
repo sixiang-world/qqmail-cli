@@ -13,7 +13,7 @@
 
 ## 仓库是什么
 
-安全优先的 **QQ 邮箱 CLI**（Go 1.25，`CGO_ENABLED=0` 纯 Go，无外部工具链）。走用户主动开启的标准 IMAP/SMTP + 16 位授权码；与腾讯无隶属。核心价值是"连上之后敢交给自动化"：凭证不落明文、读不留痕、写有门禁、删有后路、Agent 纪律内建。多服务商需求不在此仓库解决。
+安全优先的 **QQ 邮箱 CLI**（Go 1.26，`CGO_ENABLED=0` 纯 Go，无外部工具链）。走用户主动开启的标准 IMAP/SMTP + 16 位授权码；与腾讯无隶属。核心价值是"连上之后敢交给自动化"：凭证不落明文、读不留痕、写有门禁、删有后路、Agent 纪律内建。多服务商需求不在此仓库解决。
 
 **主要目录**：`cmd/qqmail-cli`（入口）、`cmd/qqmail-mcp`（只读 MCP stdio 桥）、`internal/cli`（cobra 命令层）、`internal/policy`（门禁与审计）、`internal/imapx`（IMAP 层，**唯一允许 import go-imap 的包**）、`internal/sendmail`（MIME 构建与发送，含 autosend 计数器）、`internal/mimeparse`（邮件解析）、`internal/cleaner` / `internal/cleanupplan`（清理与计划生成）、`internal/triage`、`internal/index`（SQLite/FTS5 本地索引）、`internal/account`（账号配置解析，`auto_send`/`send_blacklist`/`daily_auto_limit` 在此定义）、`internal/secrets`（凭证存储，不落明文）、`internal/safeio`（受限 IO）、`internal/export` / `internal/syncer` / `internal/mailmodel`（导出/同步/邮件建模）、`internal/readonlyaudit`（AST 守卫测试）、`internal/output`（人读脱敏）、`internal/errmap`（语义化退出码，唯一退出码出口）、`internal/e2e`（端到端测试）。仓库根另有 `schemas/`（内嵌 JSON Schema）、`docs/`、`skills/qqmail-cli/`（Agent 技能文件）、`scripts/`、`spikes/`（方言探针与一次性实验，不进构建）。
 

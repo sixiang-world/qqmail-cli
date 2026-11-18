@@ -144,7 +144,7 @@ Windows 首次运行未签名程序会弹 SmartScreen 提示，属预期行为�
 
 ### 方式二：从源码构建
 
-需要 Go 1.25+，纯 Go 构建，无 CGO、无外部工具链：
+需要 Go 1.26+，纯 Go 构建，无 CGO、无外部工具链：
 
 ```bash
 git clone https://github.com/sixiang-world/qqmail-cli.git

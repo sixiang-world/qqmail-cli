@@ -16,7 +16,7 @@
 
 ### 从源码构建
 
-需要 Go 1.25 或更高版本：
+需要 Go 1.26 或更高版本：
 
 ```text
 git clone https://github.com/sixiang-world/qqmail-cli.git

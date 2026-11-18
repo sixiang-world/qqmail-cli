@@ -55,7 +55,9 @@ All notable development changes are recorded here. Formal releases remain owner-
   `delivery_uncertain` (never a retryable network error) unless the
   server answered with a concrete SMTP error; a failed QUIT after
   acceptance no longer turns a delivered message into a failure.
-- Go toolchain bumped to 1.26.10 with patched x/net dependency family.
+- Go toolchain bumped to 1.26.11 (GO-2026-6859 net/http MaxBytesReader
+  race, GO-2026-6809 x509 intermediate distrust) with patched x/net
+  dependency family.
 
 ## 0.5.0 — 2026-10-07
 
