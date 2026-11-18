@@ -5,7 +5,6 @@ import (
 	"context"
 	"io"
 	"net/mail"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -104,7 +103,7 @@ func newReplyAllRuntime(t *testing.T, configPath string, reader imapx.Reader, on
 		IsTerminal: func(io.Reader) bool { return true },
 		Dial:       func(context.Context, account.Named, string) (imapx.Reader, error) { return reader, nil },
 		IndexOpen: func(_ string, write bool) (*index.DB, error) {
-			return index.OpenPath(filepath.Join(t.TempDir(), "cache.db"), write)
+			return openTestCache(t, write)
 		},
 		SendMail: func(_ context.Context, _ account.Named, _ string, draft sendmail.Draft, _ []byte) error {
 			onSend(draft)

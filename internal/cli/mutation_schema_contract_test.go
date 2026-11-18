@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -57,7 +56,7 @@ func TestMutationCommandsMatchSchemas(t *testing.T) {
 				Dial: func(context.Context, account.Named, string) (imapx.Reader, error) { return reader, nil },
 				DialMutator: func(context.Context, account.Named, string) (imapx.Mutator, error) { return tc.mutator, nil },
 				IndexOpen: func(string, bool) (*index.DB, error) {
-					return index.OpenPath(filepath.Join(t.TempDir(), "cache.db"), true)
+					return openTestCache(t, true)
 				},
 				IsTerminal: func(io.Reader) bool { return true },
 			}

@@ -66,7 +66,7 @@ func TestSendExecuteRejectsNonTTYBeforeCredentialAndTransport(t *testing.T) {
 func TestSendExecuteUsesAllowlistAndWritesContentFreeAudit(t *testing.T) {
 	t.Setenv("QQMAIL_CLI_READONLY", "0")
 	configPath := saveSendConfig(t, []string{"reader@example.com"})
-	cachePath := filepath.Join(t.TempDir(), "cache.db")
+	cachePath := testCachePath(t)
 	var out, stderr bytes.Buffer
 	sent := false
 	rt := &Runtime{
@@ -145,7 +145,7 @@ func TestReplyAndForwardBuildExpectedThreading(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			configPath := saveSendConfig(t, []string{"sender@example.com", "reader@example.com"})
-			cachePath := filepath.Join(t.TempDir(), "cache.db")
+			cachePath := testCachePath(t)
 			called := false
 			rt := &Runtime{
 				Out: &bytes.Buffer{}, Err: &bytes.Buffer{}, In: strings.NewReader("SEND\n"),
@@ -197,7 +197,7 @@ func (relatedMailReader) FetchBodyPeek(context.Context, mailmodel.MsgID, int64) 
 func TestForwardCarriesInlineImages(t *testing.T) {
 	t.Setenv("QQMAIL_CLI_READONLY", "0")
 	configPath := saveSendConfig(t, []string{"reader@example.com"})
-	cachePath := filepath.Join(t.TempDir(), "cache.db")
+	cachePath := testCachePath(t)
 	id := "m1_eyJmIjoiSU5CT1giLCJ2IjoxLCJ1IjoxfQ"
 	called := false
 	rt := &Runtime{
@@ -455,7 +455,7 @@ func TestAttachInlineFlagWiring(t *testing.T) {
 			Secrets:    &secrets.Memory{Values: map[string]string{"user@qq.com": testAuthCode}},
 			IsTerminal: func(io.Reader) bool { return true },
 			IndexOpen: func(_ string, write bool) (*index.DB, error) {
-				return index.OpenPath(filepath.Join(t.TempDir(), "cache.db"), write)
+				return openTestCache(t, write)
 			},
 			SendMail: func(_ context.Context, _ account.Named, _ string, draft sendmail.Draft, raw []byte) error {
 				rawMessage = raw
@@ -514,7 +514,7 @@ func TestAttachInlineFlagWiring(t *testing.T) {
 					IsTerminal: func(io.Reader) bool { return true },
 					Dial:       func(context.Context, account.Named, string) (imapx.Reader, error) { return fakeReader{}, nil },
 					IndexOpen: func(_ string, write bool) (*index.DB, error) {
-						return index.OpenPath(filepath.Join(t.TempDir(), "cache.db"), write)
+						return openTestCache(t, write)
 					},
 					SendMail: func(_ context.Context, _ account.Named, _ string, draft sendmail.Draft, _ []byte) error {
 						called = true

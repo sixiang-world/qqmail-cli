@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -59,7 +58,7 @@ func TestCleanExecuteEndToEnd(t *testing.T) {
 		DialMutator: func(context.Context, account.Named, string) (imapx.Mutator, error) {
 			return fakeCleanMutator{fixtureSize: int64(len(raw)), moved: &moved}, nil
 		},
-		IndexOpen:  func(string, bool) (*index.DB, error) { return index.OpenPath(filepath.Join(t.TempDir(), "cache.db"), true) },
+		IndexOpen:  func(string, bool) (*index.DB, error) { return openTestCache(t, true) },
 		IsTerminal: func(io.Reader) bool { return true },
 	}
 	root := NewRoot(rt)

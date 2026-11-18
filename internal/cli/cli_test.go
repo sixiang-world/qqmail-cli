@@ -173,7 +173,7 @@ func TestSyncAndLocalSearchMatchSchemas(t *testing.T) {
 	if err := cfg.Save(configPath); err != nil {
 		t.Fatal(err)
 	}
-	cachePath := filepath.Join(t.TempDir(), "cache.db")
+	cachePath := testCachePath(t)
 	planPath := filepath.Join(t.TempDir(), "plan.json")
 	markdownPath := filepath.Join(t.TempDir(), "plan.md")
 	backupPlanPath := filepath.Join(t.TempDir(), "backup-plan.json")

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -144,7 +143,7 @@ func TestTrashResolvesDestinationAndRefusesTrashFolder(t *testing.T) {
 			return f.Stub, nil
 		},
 		IndexOpen: func(string, bool) (*index.DB, error) {
-			return index.OpenPath(filepath.Join(t.TempDir(), "cache.db"), true)
+			return openTestCache(t, true)
 		},
 		IsTerminal: func(io.Reader) bool { return true },
 	}
@@ -167,7 +166,7 @@ func TestTrashResolvesDestinationAndRefusesTrashFolder(t *testing.T) {
 			return missing, nil
 		},
 		IndexOpen: func(string, bool) (*index.DB, error) {
-			return index.OpenPath(filepath.Join(t.TempDir(), "cache.db"), true)
+			return openTestCache(t, true)
 		},
 		IsTerminal: func(io.Reader) bool { return true },
 	}

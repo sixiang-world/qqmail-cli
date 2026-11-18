@@ -166,7 +166,7 @@ func TestAutoSendSendsWithoutTTY(t *testing.T) {
 	withAutoSendStateDir(t)
 	configPath := saveAutoSendConfig(t, []string{"reader@example.com"}, true, nil, 50)
 	letter := writeDraftFile(t, "to = [\"reader@example.com\"]\nsubject = \"信件\"\nbody = \"你好\"\n")
-	cachePath := filepath.Join(t.TempDir(), "cache.db")
+	cachePath := testCachePath(t)
 	var out, stderr bytes.Buffer
 	sent := 0
 	rt := &Runtime{
@@ -319,7 +319,7 @@ func TestAutoSendOutputUnchanged(t *testing.T) {
 	runSend := func(t *testing.T, autoSend bool, terminal bool, in string) []byte {
 		t.Helper()
 		configPath := saveAutoSendConfig(t, []string{"reader@example.com"}, autoSend, nil, 50)
-		cachePath := filepath.Join(t.TempDir(), "cache.db")
+		cachePath := testCachePath(t)
 		var out bytes.Buffer
 		rt := &Runtime{
 			Build: BuildInfo{Version: "test"}, Out: &out, Err: &bytes.Buffer{}, In: strings.NewReader(in),
@@ -368,7 +368,7 @@ func TestAutoSendCounterScope(t *testing.T) {
 	runSend := func(t *testing.T, autoSend bool, terminal bool, in string) error {
 		t.Helper()
 		configPath := saveAutoSendConfig(t, []string{"reader@example.com"}, autoSend, nil, 50)
-		cachePath := filepath.Join(t.TempDir(), "cache.db")
+		cachePath := testCachePath(t)
 		rt := &Runtime{
 			Build: BuildInfo{Version: "test"}, Out: &bytes.Buffer{}, Err: &bytes.Buffer{}, In: strings.NewReader(in),
 			Secrets:    &secrets.Memory{Values: map[string]string{"user@qq.com": testAuthCode}},
