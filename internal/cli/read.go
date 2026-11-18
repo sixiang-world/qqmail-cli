@@ -52,14 +52,14 @@ func newFolderCommand(rt *Runtime) *cobra.Command {
 }
 
 type envelopeOptions struct {
-	Unread    bool
-	From      string
-	To        string
-	Subject   string
-	Since     string
-	Before    string
-	Limit     int
-	BeforeUID uint32
+	Unread              bool
+	From                string
+	To                  string
+	Subject             string
+	Since               string
+	Before              string
+	Limit               int
+	BeforeUID           uint32
 	ExpectedUIDValidity uint32
 }
 

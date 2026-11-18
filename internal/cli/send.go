@@ -425,7 +425,9 @@ func runDraft(rt *Runtime, cmd *cobra.Command, named account.Named, draft sendma
 	if auto {
 		// Reserve before SMTP: a crash or concurrent Agent cannot undercount.
 		// A failed/uncertain send retains the reservation conservatively.
-		if err := reserveAutoSend(named, time.Now()); err != nil { return err }
+		if err := reserveAutoSend(named, time.Now()); err != nil {
+			return err
+		}
 	}
 	service := policy.NewMailService(rt.SendMail, store)
 	if err := service.Send(ctx, named, authCode, draft, raw, commandName(cmd)); err != nil {

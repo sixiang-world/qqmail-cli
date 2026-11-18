@@ -28,17 +28,17 @@ const (
 )
 
 type SearchFilter struct {
-	Unread    bool
-	From      string
-	To        string
-	Subject   string
-	Since     time.Time
-	Before    time.Time
-	BeforeUID uint32
+	Unread              bool
+	From                string
+	To                  string
+	Subject             string
+	Since               time.Time
+	Before              time.Time
+	BeforeUID           uint32
 	ExpectedUIDValidity uint32 // optional strict generation precondition
-	AfterUID  uint32
-	Limit     int
-	Text      string // 仅供 F1 服务端搜索使用；envelope list 不设置
+	AfterUID            uint32
+	Limit               int
+	Text                string // 仅供 F1 服务端搜索使用；envelope list 不设置
 }
 
 // Reader is deliberately read-only. Its method whitelist is tested so server
@@ -547,4 +547,3 @@ func capStrings(caps imap.CapSet) []string {
 	sort.Strings(result)
 	return result
 }
-

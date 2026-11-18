@@ -56,20 +56,20 @@ func newWatchCommand(rt *Runtime) *cobra.Command {
 		defer func() { _ = reader.Logout(context.Background()) }()
 		watermark, uidValidity := resumeUID, resumeValidity
 		if !hasUID {
-		if inspection, inspectErr := rt.IndexInspect(named.Name); inspectErr == nil && inspection.Exists {
-			store, openErr := rt.IndexOpen(named.Name, false)
-			if openErr != nil {
-				return openErr
+			if inspection, inspectErr := rt.IndexInspect(named.Name); inspectErr == nil && inspection.Exists {
+				store, openErr := rt.IndexOpen(named.Name, false)
+				if openErr != nil {
+					return openErr
+				}
+				state, ok, stateErr := store.FolderState(ctx, rt.Folder)
+				_ = store.Close()
+				if stateErr != nil {
+					return stateErr
+				}
+				if ok {
+					watermark, uidValidity = state.LastSeenUID, state.UIDValidity
+				}
 			}
-			state, ok, stateErr := store.FolderState(ctx, rt.Folder)
-			_ = store.Close()
-			if stateErr != nil {
-				return stateErr
-			}
-			if ok {
-				watermark, uidValidity = state.LastSeenUID, state.UIDValidity
-			}
-		}
 		}
 		encoder := json.NewEncoder(rt.Out)
 		poll := func() error {

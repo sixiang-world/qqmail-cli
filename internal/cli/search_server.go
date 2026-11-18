@@ -3,8 +3,8 @@ package cli
 import (
 	"context"
 
-	"github.com/situker/qqmail-cli/internal/imapx"
 	"github.com/situker/qqmail-cli/internal/errmap"
+	"github.com/situker/qqmail-cli/internal/imapx"
 	"github.com/situker/qqmail-cli/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -52,7 +52,9 @@ func runServerSearch(rt *Runtime, cmd *cobra.Command, query string, limit int, b
 	}
 	nextBeforeUID := uint32(0)
 	for _, uid := range uids {
-		if nextBeforeUID == 0 || uid < nextBeforeUID { nextBeforeUID = uid }
+		if nextBeforeUID == 0 || uid < nextBeforeUID {
+			nextBeforeUID = uid
+		}
 	}
 	data := map[string]any{"envelopes": envelopes, "query": query, "page": map[string]any{"next_before_uid": nextBeforeUID, "uidvalidity": uidValidity}}
 	if rt.JSON {
