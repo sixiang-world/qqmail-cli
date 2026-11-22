@@ -109,6 +109,13 @@ func dialWithVersion(ctx context.Context, cfg account.Named, authCode string, tl
 		return nil, err
 	}
 	stopBefore := client.watchdog(ctx)
+	// New starts the response reader asynchronously. Wait for the greeting
+	// before sending CAPABILITY: some servers do not accept earlier commands.
+	if err := client.raw.WaitGreeting(); err != nil {
+		stopBefore()
+		client.close()
+		return nil, &errmap.Error{Kind: errmap.Network, Message: "等待 IMAP 服务器欢迎消息失败", Context: map[string]any{"server": cfg.IMAPHost + ":" + fmt.Sprint(cfg.IMAPPort)}, Cause: err}
+	}
 	before, err := client.raw.Capability().Wait()
 	stopBefore()
 	if err != nil {

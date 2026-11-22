@@ -4,6 +4,24 @@ All notable development changes are recorded here. Formal releases remain owner-
 
 ## Unreleased
 
+### Fixed (2026-11-23 review follow-up)
+
+- Reject autosend state with a missing or null `count`, including older
+  dated state, before deciding eligibility or reserving quota. An explicit
+  zero remains valid, and the persisted state format is unchanged.
+- Preserve MCP search queries and message IDs as literal CLI arguments.
+  Queries such as `-invoice`, `--help` and `--` no longer change option
+  parsing; search modes, limits and pagination options remain effective.
+- Suppress replies for canceled MCP tool calls and reject excess concurrent
+  calls immediately instead of queuing more than four in-flight calls.
+- Accept an optional `folder` on MCP server searches. The default remains
+  `INBOX`; local mode searches the account's index.
+- Emit a `checkpoint` with `last_uid` and `uidvalidity` when `watch --once`
+  starts without a resume checkpoint or local folder state. Later runs can
+  resume from these values, including `last_uid: 0` for an empty folder.
+- Wait for the IMAP server greeting before sending the first command, with
+  the existing deadline and cancellation watchdog protecting the wait.
+
 ### Added (2026-11-19 agent-bridge round)
 
 - `qqmail-mcp`: a local read-only stdio MCP adapter exposing five
