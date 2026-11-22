@@ -22,6 +22,7 @@ type watchEvent struct {
 	Folder              string              `json:"folder"`
 	UIDValidity         uint32              `json:"uidvalidity"`
 	PreviousUIDValidity uint32              `json:"previous_uidvalidity,omitempty"`
+	LastUID             *uint32             `json:"last_uid,omitempty"`
 	Envelope            *mailmodel.Envelope `json:"envelope,omitempty"`
 }
 
@@ -32,7 +33,7 @@ func newWatchCommand(rt *Runtime) *cobra.Command {
 	cmd := &cobra.Command{Use: "watch", Short: "Poll for new UIDs and emit one NDJSON event per change", Args: cobra.NoArgs}
 	cmd.Flags().BoolVar(&jsonl, "jsonl", false, "required: emit newline-delimited JSON events")
 	cmd.Flags().DurationVar(&interval, "interval", 60*time.Second, "poll interval (minimum 5s)")
-	cmd.Flags().BoolVar(&once, "once", false, "poll once and exit (for automation and tests)")
+	cmd.Flags().BoolVar(&once, "once", false, "poll once and exit, emitting a checkpoint when starting without one")
 	cmd.Flags().Uint32Var(&resumeUID, "resume-uid", 0, "resume from last observed UID (requires --resume-uidvalidity)")
 	cmd.Flags().Uint32Var(&resumeValidity, "resume-uidvalidity", 0, "mailbox UIDVALIDITY for --resume-uid")
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
@@ -73,9 +74,19 @@ func newWatchCommand(rt *Runtime) *cobra.Command {
 		}
 		encoder := json.NewEncoder(rt.Out)
 		poll := func() error {
+			bootstrap := uidValidity == 0
 			events, err := pollWatch(ctx, reader, rt.Folder, &watermark, &uidValidity)
 			if err != nil {
 				return err
+			}
+			if once && bootstrap {
+				if uidValidity == 0 {
+					return errmap.New(errmap.ParseError, "邮箱未返回有效的 UIDVALIDITY，无法生成 watch 断点")
+				}
+				return encoder.Encode(watchEvent{
+					SchemaVersion: "1", Event: "checkpoint", ObservedAt: time.Now().UTC(),
+					Folder: rt.Folder, UIDValidity: uidValidity, LastUID: &watermark,
+				})
 			}
 			for _, event := range events {
 				if err := encoder.Encode(event); err != nil {
