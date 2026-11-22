@@ -45,13 +45,19 @@ func readAutoSendState(now time.Time) (autoSendState, error) {
 	if err != nil {
 		return fresh, err
 	}
-	var state autoSendState
-	if err := json.Unmarshal(raw, &state); err != nil {
+	// A missing or null count is not a verified zero. Keep its presence
+	// separate while decoding without changing the persisted state format.
+	var stored struct {
+		Date  string `json:"date"`
+		Count *int   `json:"count"`
+	}
+	if err := json.Unmarshal(raw, &stored); err != nil {
 		return fresh, fmt.Errorf("autosend counter is corrupt: %w", err)
 	}
-	if state.Count < 0 || state.Date == "" {
+	if stored.Count == nil || *stored.Count < 0 || stored.Date == "" {
 		return fresh, fmt.Errorf("autosend counter has invalid fields")
 	}
+	state := autoSendState{Date: stored.Date, Count: *stored.Count}
 	parsed, parseErr := time.Parse("2006-01-02", state.Date)
 	if parseErr != nil || parsed.Format("2006-01-02") != state.Date {
 		return fresh, fmt.Errorf("autosend counter has invalid date")

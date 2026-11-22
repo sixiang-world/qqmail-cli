@@ -15,17 +15,60 @@ import (
 )
 
 func TestAutoSendCorruptStateFailsClosed(t *testing.T) {
-	path := withAutoSendStateDir(t)
-	if err := os.WriteFile(path, []byte("{not valid json"), 0o600); err != nil {
+	now := time.Date(2026, 11, 23, 12, 0, 0, 0, time.Local)
+	named := account.Named{AutoSend: true, DailyAutoLimit: 3}
+	for _, tc := range []struct {
+		name string
+		raw  string
+	}{
+		{"malformed JSON", "{not valid json"},
+		{"missing count", `{"date":"2026-11-23"}`},
+		{"null count", `{"date":"2026-11-23","count":null}`},
+		{"missing count on previous day", `{"date":"2026-11-22"}`},
+		{"null count on previous day", `{"date":"2026-11-22","count":null}`},
+		{"missing date", `{"count":1}`},
+		{"null date", `{"date":null,"count":1}`},
+		{"empty object", `{}`},
+		{"null state", `null`},
+		{"negative count", `{"date":"2026-11-23","count":-1}`},
+		{"string count", `{"date":"2026-11-23","count":"1"}`},
+		{"fractional count", `{"date":"2026-11-23","count":1.5}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := withAutoSendStateDir(t)
+			if err := os.WriteFile(path, []byte(tc.raw), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			eligible, err := autoSendEligible(named, []string{"allowed@example.com"}, now)
+			if eligible || err == nil || errmap.Classify(err).Kind != errmap.PolicyDenied {
+				t.Fatalf("corrupt state must deny autosend: eligible=%v err=%v", eligible, err)
+			}
+			err = reserveAutoSend(named, now)
+			if err == nil || errmap.Classify(err).Kind != errmap.PolicyDenied {
+				t.Fatalf("reservation must fail closed on corrupt state: %v", err)
+			}
+			if got, err := os.ReadFile(path); err != nil || string(got) != tc.raw {
+				t.Fatalf("corrupt counter overwritten: %q %v", got, err)
+			}
+		})
+	}
+}
+
+func TestAutoSendExplicitZeroCountCanReserve(t *testing.T) {
+	withAutoSendStateDir(t)
+	now := time.Date(2026, 11, 23, 12, 0, 0, 0, time.Local)
+	seedAutoSendState(t, now.Format("2006-01-02"), 0)
+	named := account.Named{AutoSend: true, DailyAutoLimit: 3}
+	eligible, err := autoSendEligible(named, []string{"allowed@example.com"}, now)
+	if !eligible || err != nil {
+		t.Fatalf("explicit zero count must allow autosend: eligible=%v err=%v", eligible, err)
+	}
+	if err := reserveAutoSend(named, now); err != nil {
 		t.Fatal(err)
 	}
-	named := account.Named{AutoSend: true, DailyAutoLimit: 3}
-	eligible, err := autoSendEligible(named, []string{"allowed@example.com"}, time.Now())
-	if eligible || err == nil || errmap.Classify(err).Kind != errmap.PolicyDenied {
-		t.Fatalf("corrupt state must deny autosend: eligible=%v err=%v", eligible, err)
-	}
-	if err := reserveAutoSend(named, time.Now()); err == nil {
-		t.Fatal("reservation must fail closed on corrupt state")
+	state, err := readAutoSendState(now)
+	if err != nil || state.Date != now.Format("2006-01-02") || state.Count != 1 {
+		t.Fatalf("zero-count reservation=%+v err=%v", state, err)
 	}
 }
 
