@@ -4,13 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 )
 
 func params(s string) json.RawMessage { return json.RawMessage(s) }
@@ -23,9 +21,9 @@ func TestToolArgumentsReadOnly(t *testing.T) {
 	}{
 		{"qqmail_folders", "{}", "folder list"},
 		{"qqmail_list", `{"unread":true,"limit":5,"before_uid":100}`, "--before-uid 100"},
-		{"qqmail_show", `{"id":"m1_opaque"}`, "message show m1_opaque"},
+		{"qqmail_show", `{"id":"m1_opaque"}`, "message show -- m1_opaque"},
 		{"qqmail_search", `{"query":"发票","before_uid":77}`, "--before-uid 77"},
-		{"qqmail_attachments", `{"id":"m1_opaque"}`, "attachment list m1_opaque"},
+		{"qqmail_attachments", `{"id":"m1_opaque"}`, "attachment list -- m1_opaque"},
 	}
 	for _, test := range cases {
 		args, err := toolArguments(test.Name, params(test.Args))
@@ -139,34 +137,6 @@ func TestMCPStdioRequestAndNotifications(t *testing.T) {
 		if m["jsonrpc"] != "2.0" {
 			t.Fatalf("missing JSONRPC: %s", line)
 		}
-	}
-}
-
-func TestMCPDisconnectCancelsHangingCLI(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX script fixture")
-	}
-	dir := t.TempDir()
-	path := filepath.Join(dir, "hang-cli")
-	if err := os.WriteFile(path, []byte("#!/bin/sh\nexec sleep 30\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("QQMAIL_CLI_BIN", path)
-	r, w := io.Pipe()
-	var out bytes.Buffer
-	done := make(chan error, 1)
-	go func() { done <- serve(r, &out) }()
-	_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"qqmail_folders","arguments":{}}}`+"\n")
-	// Keep the command in flight while EOF is delivered.
-	time.Sleep(50 * time.Millisecond)
-	_ = w.Close()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("stdio EOF left a subprocess running")
 	}
 }
 

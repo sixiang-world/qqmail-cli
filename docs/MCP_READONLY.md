@@ -27,10 +27,12 @@ Supported tools:
 | `qqmail_folders` | Read folder metadata |
 | `qqmail_list` | List envelopes with optional filters and a UID cursor |
 | `qqmail_show` | Read one opaque message ID without changing unread state |
-| `qqmail_search` | Read server BODY results or local index results |
+| `qqmail_search` | Search one server folder by BODY (default `INBOX`), or search the account's local index |
 | `qqmail_attachments` | Read attachment metadata only |
 
-Every tool call is constrained to a known set of CLI arguments, uses a 50-second execution deadline and bounds its response to 4 MiB. MCP cancellation notifications and stdio disconnects cancel in-flight calls; at most four subprocess requests run concurrently. Tool results retain the CLI JSON envelope, including nonfatal warnings and structured failure codes, even when the CLI exits with status 70. The subprocess always uses readonly mode. Mail text remains untrusted and may contain attempts to redirect the Agent's instructions.
+Every tool call uses a known set of CLI arguments, a 50-second execution deadline and a 4 MiB CLI output limit. The bridge accepts at most four in-flight tool calls. An additional valid call receives JSON-RPC error `-32000` (`Too many concurrent tool calls`) without entering a queue. A cancellation notification for an in-flight call stops the child and suppresses its response. Closing the bridge's stdin cancels all in-flight calls. Tool results retain the CLI JSON envelope, including nonfatal warnings and structured failure codes, even when the CLI exits with status 70. The subprocess always uses readonly mode. Mail text remains untrusted and may contain attempts to redirect the Agent's instructions.
+
+Search queries and message IDs are passed as literal positional arguments after the CLI's `--` separator. A query such as `-invoice`, `--help` or `--` is searched as supplied, while the adapter's mode, limit and pagination options remain separate.
 
 **Limitations:** This is a stdio adapter, **not** a hosted ChatGPT connector or a publicly reachable MCP server. It must run wherever the Agent's supported MCP execution environment can launch local processes. Search pagination requires this branch's updated CLI. Local index results may not cover message bodies unless a user has explicitly enabled body caching. No background mailbox watcher or guaranteed push notification is included. For production use, test with a dedicated mailbox and review access restrictions.
 
@@ -40,4 +42,4 @@ Auto-send remains a separate CLI feature and is intentionally **not** exposed th
 
 This implementation follows JSON-RPC 2.0 over newline-delimited stdio messages with MCP initialize, ping, tools/list and tools/call methods. Clients requiring additional MCP features may need a fuller adapter. No auth tokens are accepted on MCP messages.
 
-For paginated server searches, carry the returned `page.uidvalidity` into `expected_uidvalidity` on the next `qqmail_search` call. A mismatched mailbox generation returns a structured `stale_id` error; start over rather than reusing old UID cursors. `qqmail_list` also accepts an optional generation precondition, but its legacy envelope-page response does not yet report the generation for empty pages.
+In server mode, pass `folder` to search a different mailbox folder, using its name from `qqmail_folders`. Local mode searches the account's index and does not accept `folder`. When requesting another server page, keep the same folder and pass `page.next_before_uid` as `before_uid` and `page.uidvalidity` as `expected_uidvalidity`. A mismatched mailbox generation returns a structured `stale_id` error; start over rather than reusing old UID cursors. `qqmail_list` also accepts an optional generation precondition, but its legacy envelope-page response does not yet report the generation for empty pages.
