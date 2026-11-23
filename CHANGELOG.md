@@ -11,11 +11,13 @@ All notable development changes are recorded here. Formal releases remain owner-
   zero remains valid, and the persisted state format is unchanged.
 - Preserve MCP search queries and message IDs as literal CLI arguments.
   Queries such as `-invoice`, `--help` and `--` no longer change option
-  parsing; search modes, limits and pagination options remain effective.
+  parsing; server search limits and pagination options remain effective.
 - Suppress replies for canceled MCP tool calls and reject excess concurrent
   calls immediately instead of queuing more than four in-flight calls.
-- Accept an optional `folder` on MCP server searches. The default remains
-  `INBOX`; local mode searches the account's index.
+- Limit MCP searches to server-side BODY queries with an optional `folder`.
+  The default remains `INBOX`.
+- Negotiate MCP `2025-06-18` over stdio and document the Windows `.exe`
+  paths for both binaries.
 - Emit a `checkpoint` with `last_uid` and `uidvalidity` when `watch --once`
   starts without a resume checkpoint or local folder state. Later runs can
   resume from these values, including `last_uid: 0` for an empty folder.

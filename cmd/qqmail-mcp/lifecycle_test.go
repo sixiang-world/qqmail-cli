@@ -101,6 +101,11 @@ func startMCPServer(t *testing.T) (*io.PipeWriter, <-chan []byte, <-chan error) 
 			lines <- append([]byte(nil), scanner.Bytes()...)
 		}
 	}()
+	writeMCPRequest(t, input, `{"jsonrpc":"2.0","id":"init","method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`)
+	if response := awaitMCPResponse(t, lines); response.ID != "init" || response.Error != nil {
+		t.Fatalf("initialization failed: %+v", response)
+	}
+	writeMCPRequest(t, input, `{"jsonrpc":"2.0","method":"notifications/initialized"}`)
 	return input, lines, done
 }
 

@@ -24,7 +24,6 @@ func TestSearchArgumentsPreserveLiteralQuery(t *testing.T) {
 		{name: "default", limit: 50},
 		{name: "server-page", mode: "server", folder: "已发送邮件/Sent Messages", limit: 7, before: 99, generation: 777},
 		{name: "default-mode-folder", folder: "--help", limit: 50},
-		{name: "local", mode: "local", limit: 3},
 	}
 	for _, profile := range profiles {
 		for _, query := range []string{"-invoice", "--help", "--", "--server=false", "发票 with spaces"} {
@@ -65,7 +64,7 @@ func TestSearchArgumentsPreserveLiteralQuery(t *testing.T) {
 					limit, _ := cmd.Flags().GetInt("limit")
 					before, _ := cmd.Flags().GetUint32("before-uid")
 					generation, _ := cmd.Flags().GetUint32("expected-uidvalidity")
-					if server != (profile.mode != "local") || local != (profile.mode == "local") || limit != profile.limit || before != profile.before || generation != profile.generation {
+					if !server || local || limit != profile.limit || before != profile.before || generation != profile.generation {
 						t.Errorf("flags changed: server=%v local=%v limit=%d before=%d generation=%d", server, local, limit, before, generation)
 					}
 					return nil
@@ -97,7 +96,6 @@ func TestSearchRejectsInvalidFolder(t *testing.T) {
 		`{"query":"invoice","folder":"  "}`,
 		`{"query":"invoice","folder":"invalid\u0000name"}`,
 		`{"query":"invoice","folder":"invalid\r\nname"}`,
-		`{"query":"invoice","folder":"Sent Messages","mode":"local"}`,
 	} {
 		if _, err := toolArguments("qqmail_search", json.RawMessage(raw)); err == nil {
 			t.Errorf("accepted invalid search folder in %s", raw)

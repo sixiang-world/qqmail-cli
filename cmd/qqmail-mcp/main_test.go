@@ -46,12 +46,12 @@ func TestRejectUnknownOrUnsafeArgs(t *testing.T) {
 	cases := []struct{ name, arguments string }{
 		{"qqmail_folders", `{"command":"send"}`},
 		{"qqmail_show", `{"id":"x","execute":true}`},
-		{"qqmail_search", `{"query":"x","mode":"local","before_uid":4}`},
+		{"qqmail_search", `{"query":"x","mode":"local"}`},
 		{"qqmail_search", `{"query":"x","limit":101}`},
 		{"qqmail_list", `{"limit":-1}`},
 		{"qqmail_list", `{"limit":0}`},
 		{"qqmail_list", `{"expected_uidvalidity":0}`},
-		{"qqmail_search", `{"query":"a","mode":"local","expected_uidvalidity":777}`},
+		{"qqmail_search", `{"query":"a","mode":null}`},
 		{"qqmail_search", `{"query":"x","limit":0}`},
 		{"qqmail_search", `{"query":"x","limit":1.5}`},
 		{"qqmail_show", `{"id":null}`},
@@ -112,31 +112,48 @@ esac
 	}
 }
 
-func TestMCPStdioRequestAndNotifications(t *testing.T) {
-	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
-{"jsonrpc":"2.0","method":"notifications/initialized"}
-{"jsonrpc":"2.0","id":"two","method":"tools/list"}
-{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"qqmail_list","arguments":{"limit":0}}}
-{"jsonrpc":"2.0","id":4,"method":"unknown"}`)
-	var out bytes.Buffer
-	if err := serve(in, &out); err != nil {
-		t.Fatal(err)
-	}
-	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	if len(lines) != 4 {
-		t.Fatalf("expected four responses, got %d: %s", len(lines), out.String())
-	}
-	if strings.Contains(out.String(), "notifications/initialized") {
-		t.Fatalf("notification generated a response: %s", out.String())
-	}
-	for _, line := range lines {
-		var m map[string]any
-		if err := json.Unmarshal([]byte(line), &m); err != nil {
-			t.Fatal(err)
-		}
-		if m["jsonrpc"] != "2.0" {
-			t.Fatalf("missing JSONRPC: %s", line)
-		}
+func TestMCPStdioInitialization(t *testing.T) {
+	for _, offered := range []string{"2025-06-18", "2025-11-25", "2025-03-26"} {
+		t.Run(offered, func(t *testing.T) {
+			input := strings.Join([]string{
+				`{"jsonrpc":"2.0","id":"invalid","method":"initialize","params":{}}`,
+				`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
+				`{"jsonrpc":"2.0","id":"early-call","method":"tools/call","params":{"name":"qqmail_folders"}}`,
+				`{"jsonrpc":"2.0","id":"init","method":"initialize","params":{"protocolVersion":"` + offered + `","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`,
+				`{"jsonrpc":"2.0","id":"early-list","method":"tools/list"}`,
+				`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
+				`{"jsonrpc":"2.0","id":"ready","method":"tools/list"}`,
+				`{"jsonrpc":"2.0","id":"local","method":"tools/call","params":{"name":"qqmail_search","arguments":{"query":"fixture","mode":"local"}}}`,
+				`[{"jsonrpc":"2.0","id":1,"method":"ping"}]`,
+			}, "\n")
+			var out bytes.Buffer
+			if err := serve(strings.NewReader(input), &out); err != nil {
+				t.Fatal(err)
+			}
+			lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+			want := [][]string{
+				{`"id":"invalid"`, `"code":-32602`},
+				{`"id":"early-call"`, `"code":-32002`},
+				{`"id":"init"`, `"protocolVersion":"2025-06-18"`},
+				{`"id":"early-list"`, `"code":-32002`},
+				{`"id":"ready"`, `"enum":["server"]`, `"name":"qqmail_search"`},
+				{`"id":"local"`, `"isError":true`, "only server search is supported"},
+				{`"id":null`, `"code":-32600`},
+			}
+			if len(lines) != len(want) {
+				t.Fatalf("expected %d responses, got %d: %s", len(want), len(lines), out.String())
+			}
+			for i, line := range lines {
+				if !json.Valid([]byte(line)) || !strings.Contains(line, `"jsonrpc":"2.0"`) {
+					t.Fatalf("invalid MCP response: %s", line)
+				}
+				for _, part := range want[i] {
+					if !strings.Contains(line, part) {
+						t.Errorf("response %d missing %q: %s", i, part, line)
+					}
+				}
+			}
+		})
 	}
 }
 
