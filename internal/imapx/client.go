@@ -204,7 +204,7 @@ type imapTransport struct {
 func (c *imapTransport) Read(p []byte) (int, error) {
 	n, err := c.Conn.Read(p)
 	if err != nil && isIMAPTransportError(err) {
-		c.readInterrupted.Store(true)
+		c.readInterrupted.Swap(true)
 	}
 	return n, err
 }
