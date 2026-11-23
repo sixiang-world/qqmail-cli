@@ -16,7 +16,7 @@
 
 ### 从源码构建
 
-需要 Go 1.25 或更高版本：
+需要 Go 1.26 或更高版本：
 
 ```text
 git clone https://github.com/sixiang-world/qqmail-cli.git
@@ -332,7 +332,7 @@ v0.4 只支持星标（`\Flagged`）这一个旗标，`--add` 与 `--remove` 二
 .\bin\qqmail-cli.exe watch --folder INBOX --jsonl --interval 60s
 ```
 
-输出是 NDJSON，每行一个 `new_message` 或 `folder_reset` 事件。产品路径不使用 IDLE。
+输出是 NDJSON，每行一个事件。首次执行 `--once` 且没有断点或该文件夹的本地索引状态时，会输出 `checkpoint` 事件。记下其中的 `last_uid`（空文件夹为 `0`）和 `uidvalidity`，下次在同一账号和文件夹使用 `--resume-uid`、`--resume-uidvalidity` 继续轮询。有新邮件时输出 `new_message`，邮箱 UIDVALIDITY 变化时输出 `folder_reset`。详见 [Agent 用法](AGENT_READ_SEARCH.md#restartable-new-mail-polling)。轮询不使用 IDLE。
 
 缓存清理默认 dry-run：
 

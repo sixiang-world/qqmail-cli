@@ -35,5 +35,10 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, path)
+	if err := os.Rename(tmpName, path); err != nil {
+		return err
+	}
+	// The file itself was fsync'd above. On POSIX, syncing the containing
+	// directory also makes the renamed directory entry crash-durable.
+	return syncParentDir(dir)
 }

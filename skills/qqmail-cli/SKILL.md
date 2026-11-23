@@ -81,7 +81,9 @@ Each invocation submits at most one message. On `rate_limited`, stop immediately
 
 ### Auto-sending
 
-With `auto_send = true` in the account config, an allowlisted `--execute` send whose recipients are all outside `send_blacklist` completes without the TTY prompt and without reading stdin, under `daily_auto_limit` (default 50/day, local counter only — it never appears in output or audit). Any blacklisted recipient falls back to the full interactive gate; `QQMAIL_CLI_READONLY=1` still refuses everything. Allowlist and blacklist have no CLI write path: only a human edits config.
+With `auto_send = true` in the account config, an allowlisted `--execute` send whose recipients are all outside `send_blacklist` completes without the TTY prompt and without reading stdin, under `daily_auto_limit` (default 50/day, local counter only — it never appears in output or audit). The quota is reserved under a cross-process file lock before SMTP submission and never refunded: a failed or uncertain send still consumes today's quota, and a corrupt counter or a future-dated counter (clock rollback) refuses unattended sending outright. Any blacklisted recipient falls back to the full interactive gate; `QQMAIL_CLI_READONLY=1` still refuses everything. Allowlist and blacklist have no CLI write path: only a human edits config.
+
+Do not retry a send that exited with `delivery_uncertain` (exit 20, `retryable` false): the server may have accepted the delivery. Check the sent folder or the recipient, then decide as a human whether to resend.
 
 ### Server drafts, HTML, and inline images
 
@@ -101,7 +103,7 @@ Received inline (CID) images are already listed and downloadable through the att
 | 3 | config | Ask the human to repair configuration. |
 | 10 | authentication/authorization code | Human action; never retry automatically. |
 | 11 | IMAP/SMTP service not enabled | Ask the human to enable the service. |
-| 20 | network | Retry only when `error.retryable` is true, at most twice with backoff. |
+| 20 | network | Retry only when `error.retryable` is true, at most twice with backoff. `delivery_uncertain` is never retryable: the server may have accepted the delivery — verify as a human, then decide. |
 | 21 | TLS | Stop and report certificate/time/proxy diagnostics. |
 | 30 | rate limited | Stop; wait 10–15 minutes. |
 | 40 | not found/stale ID | Relist once for stale IDs; otherwise report. |

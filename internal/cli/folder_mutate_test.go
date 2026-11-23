@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -83,7 +82,7 @@ func TestFolderCreateAndRenameExecute(t *testing.T) {
 				return stub, nil
 			},
 			IndexOpen: func(string, bool) (*index.DB, error) {
-				return index.OpenPath(filepath.Join(t.TempDir(), "cache.db"), true)
+				return openTestCache(t, true)
 			},
 			IsTerminal: func(io.Reader) bool { return in != "" },
 		}

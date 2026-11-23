@@ -190,7 +190,7 @@ func TestDraftFileFullGates(t *testing.T) {
 		t.Setenv("QQMAIL_CLI_READONLY", "0")
 		configPath := saveSendConfig(t, []string{"reader@example.com"})
 		letter := writeLetter(t, "reader@example.com")
-		cachePath := filepath.Join(t.TempDir(), "cache.db")
+		cachePath := testCachePath(t)
 		var out, stderr bytes.Buffer
 		sent := false
 		rt := &Runtime{

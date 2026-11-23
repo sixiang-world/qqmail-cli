@@ -24,6 +24,16 @@ func TestFilterUIDWindow(t *testing.T) {
 	if !reflect.DeepEqual(got, []imap.UID{7, 5}) {
 		t.Fatalf("BeforeUID window: %v", got)
 	}
+	for _, filter := range []SearchFilter{{BeforeUID: 1}, {AfterUID: ^uint32(0)}} {
+		got = filterUIDWindow(append([]imap.UID(nil), ids...), filter)
+		if len(got) != 0 {
+			t.Fatalf("exhausted window %+v leaked UIDs: %v", filter, got)
+		}
+	}
+	got = filterUIDWindow(append([]imap.UID(nil), ids...), SearchFilter{AfterUID: 5, BeforeUID: 9})
+	if !reflect.DeepEqual(got, []imap.UID{7}) {
+		t.Fatalf("combined UID window: %v", got)
+	}
 	got = filterUIDWindow(append([]imap.UID(nil), ids...), SearchFilter{})
 	if !reflect.DeepEqual(got, ids) {
 		t.Fatalf("no-window filter changed results: %v", got)
