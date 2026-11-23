@@ -147,7 +147,10 @@ $list.data.envelopes | Select-Object date, from, subject, id
 .\bin\qqmail-cli.exe attachment list $id --json
 .\bin\qqmail-cli.exe attachment download $id 1 --output .\downloads --max-size 10485760 --json
 .\bin\qqmail-cli.exe attachment download $id all --output .\downloads --json
+.\bin\qqmail-cli.exe attachment download $id all --output ".\下载 图片" --image-extension --json
 ```
+
+加上 `--image-extension` 后，命令用附件字节识别 JPEG、PNG、GIF 和 WebP。缺少后缀或后缀不匹配时追加正确后缀，例如 `photo.123.jpg`。已有匹配的后缀保留原大小写，JPEG 接受 `.jpg` 和 `.jpeg`。其它格式沿用默认命名，`downloaded[].path` 指向实际写入的文件。
 
 下载会消毒文件名、阻止目录穿越且不覆盖现有文件。附件仍是不可信文件，不要自动执行或打开宏。
 

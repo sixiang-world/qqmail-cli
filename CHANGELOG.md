@@ -24,6 +24,12 @@ All notable development changes are recorded here. Formal releases remain owner-
 - Wait for the IMAP server greeting before sending the first command, with
   the existing deadline and cancellation watchdog protecting the wait.
 
+### Added (2026-11-23 attachment download)
+
+- `attachment download --image-extension` optionally appends a JPEG, PNG,
+  GIF, or WebP extension based on the attachment bytes when the existing
+  filename lacks a matching extension.
+
 ### Added (2026-11-19 agent-bridge round)
 
 - `qqmail-mcp`: a local read-only stdio MCP adapter exposing five

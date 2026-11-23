@@ -17,7 +17,7 @@ Use `qqmail-cli agent-info` as the current capability and risk source of truth. 
 2. Use `auth status --json` for local status and `doctor --json` only for connection diagnosis.
 3. Run one filtered `envelope list --json` call and inspect metadata first.
 4. Pass all selected IDs to one `message show <id>... --json` call. Do not launch one CLI process per message; frequent QQ logins can be rate-limited.
-5. Use `attachment list` before an explicitly requested `attachment download` and constrain the output directory.
+5. Use `attachment list` before an explicitly requested `attachment download` and constrain the output directory. Use `--image-extension` to append a matching JPEG, PNG, GIF, or WebP suffix from the downloaded bytes and use `downloaded[].path` to locate the actual file.
 6. For backups, use `export --ids`, `export --since`, or `export --all`, then `export --verify` before claiming success.
 
 `search` takes exactly one of `--local` (the local FTS5 index, full-text including Chinese) or `--server` (an IMAP `BODY` criterion evaluated on the server — it matches message bodies only, not subjects or senders; use `envelope list --subject/--from` for those). The live probe recorded QQ silently ignoring `TEXT` (docs/compat/qq-20261006.md), so the CLI emits `BODY`; when the server refuses the search it is a final answer, not a transient fault — do not retry it, fall back to `--local`.
