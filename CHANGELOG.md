@@ -4,6 +4,10 @@ All notable development changes are recorded here. Formal releases remain owner-
 
 ## Unreleased
 
+(nothing yet)
+
+## 0.6.0 — 2026-11-23
+
 ### Fixed (2026-11-23 review follow-up)
 
 - Reject autosend state with a missing or null `count`, including older
