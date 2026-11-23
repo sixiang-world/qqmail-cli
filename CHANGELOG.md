@@ -4,6 +4,12 @@ All notable development changes are recorded here. Formal releases remain owner-
 
 ## Unreleased
 
+### Added (2026-11-23 connection diagnostics)
+
+- Report the failing connection stage in `error.context.stage` and the names
+  of completed checks in `doctor --json` failures. A transport timeout or
+  disconnect while waiting for an IMAP command is reported as `network`.
+
 ### Fixed (2026-11-23 review follow-up)
 
 - Reject autosend state with a missing or null `count`, including older

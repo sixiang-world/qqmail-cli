@@ -1,1 +1,77 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://github.com/sixiang-world/qqmail-cli/schemas/doctor.schema.json","allOf":[{"$ref":"envelope-common.schema.json"},{"properties":{"command":{"const":"doctor"},"data":{"type":"object","required":["checks","capabilities_before_login","capabilities_after_login","readonly"]}}}]}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sixiang-world/qqmail-cli/schemas/doctor.schema.json",
+  "allOf": [
+    {
+      "$ref": "envelope-common.schema.json"
+    },
+    {
+      "properties": {
+        "command": {
+          "const": "doctor"
+        }
+      },
+      "if": {
+        "properties": {
+          "ok": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "checks",
+              "capabilities_before_login",
+              "capabilities_after_login",
+              "readonly"
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "type": "object",
+            "properties": {
+              "context": {
+                "type": "object",
+                "properties": {
+                  "stage": {
+                    "$ref": "#/$defs/stage"
+                  },
+                  "completed_checks": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/stage"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "stage": {
+      "enum": [
+        "config",
+        "credential",
+        "tcp",
+        "tls",
+        "imap_greeting",
+        "imap_capability_before_login",
+        "imap_login",
+        "imap_capability_after_login",
+        "imap_id"
+      ]
+    }
+  }
+}

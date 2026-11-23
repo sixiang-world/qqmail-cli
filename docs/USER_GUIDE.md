@@ -53,6 +53,8 @@ Remove-Item Env:QQMAIL_CLI_READONLY -ErrorAction SilentlyContinue
 .\bin\qqmail-cli.exe doctor --json
 ```
 
+连接诊断失败时，`doctor --json` 的 `error.context.stage` 标出失败阶段。`error.context.completed_checks` 列出此前完成的阶段名称。按发生顺序为 `config`、`credential`、`tcp`、`tls`、`imap_greeting`、`imap_capability_before_login`、`imap_login`、`imap_capability_after_login`，以及服务器支持时的 `imap_id`。例如，`imap_greeting` 表示 TLS 已完成，但客户端还未收到可用的 IMAP 欢迎消息。
+
 管理多个账号：
 
 ```powershell
