@@ -19,9 +19,27 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
-      - name: Check module metadata
+      - name: Check module metadata (preserve explicit security pins)
+        shell: bash
         run: |
+          set -euo pipefail
+          cp go.mod /tmp/qqmail-go.mod
+          cp go.sum /tmp/qqmail-go.sum
+          # These indirect requirements were intentionally pinned by the
+          # security update e8886f1; tidy may remove unused explicit pins.
+          crypto=$(awk '$1 == "golang.org/x/crypto" && $3 == "//" && $4 == "indirect" {print $2}' go.mod)
+          sync=$(awk '$1 == "golang.org/x/sync" && $3 == "//" && $4 == "indirect" {print $2}' go.mod)
+          test -n "$crypto" && test -n "$sync"
           go mod tidy
+          filter_mod() {
+            awk -v c="$crypto" -v s="$sync" '(($1=="golang.org/x/crypto" && $2==c) || ($1=="golang.org/x/sync" && $2==s)) && $3=="//" && $4=="indirect" {next} {print}' "$1"
+          }
+          filter_sum() {
+            awk -v c="$crypto" -v s="$sync" '($1=="golang.org/x/crypto" && ($2==c || $2==c"/go.mod")) || ($1=="golang.org/x/sync" && ($2==s || $2==s"/go.mod")) {next} {print}' "$1"
+          }
+          diff -u <(filter_mod /tmp/qqmail-go.mod) <(filter_mod go.mod)
+          diff -u <(filter_sum /tmp/qqmail-go.sum) <(filter_sum go.sum)
+          git restore -- go.mod go.sum
           git diff --exit-code -- go.mod go.sum
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
         with:
