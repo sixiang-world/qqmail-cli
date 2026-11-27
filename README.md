@@ -90,6 +90,12 @@ $ qqmail-cli message show "m1_eyJmIjoiSU5CT1giLCJ2IjoxNDI1LCJ1Ijo4MzQ3fQ" \
 - **内嵌图读取闭环** —— `multipart/related` 邮件的 CID 图片可列出、可下载、转发不丢图。
 - **可验证的诚实** —— QQ 搜索方言与草稿箱位置来自只读探针实测（[spikes/imap-dialect-probe](spikes/imap-dialect-probe/)），结论落档 `docs/compat/`；文件夹名编码修正为 RFC 3501 Modified UTF-7 并与 go-imap 序列化器做了差分验证。
 
+### v0.6.1
+
+- **分阶段连接诊断** —— `doctor --json` 报告 IMAP 连接失败阶段及已完成的检查。
+- **图片附件扩展名** —— 可选 `attachment download --image-extension` 根据文件字节补全匹配的图片后缀，默认行为不变。
+- **云端实测与规划** —— 见 [Muse 实测报告](docs/research/2026-11-27-muse-agent-field-report.md) 与 [开发路线图](docs/roadmap.md)。
+
 ### v0.6.0（已发布）
 
 - **可分页服务端搜索** —— `search --server` 返回 UID 游标和 UIDVALIDITY，翻页时可拒绝过期游标。
@@ -326,7 +332,7 @@ Agent 集成三件套：
 
 ## 项目状态
 
-当前版本为 `0.6.0`（[Release](https://github.com/sixiang-world/qqmail-cli/releases/tag/v0.6.0)）。版本变更见 [CHANGELOG](CHANGELOG.md)，真实 QQ 服务器的脱敏兼容性观察见 [兼容性记录](docs/compat/README.md)。
+代码版本为 `0.6.1`（[Releases](https://github.com/sixiang-world/qqmail-cli/releases)）。版本变更见 [CHANGELOG](CHANGELOG.md)，真实 QQ 服务器的脱敏兼容性观察见 [兼容性记录](docs/compat/README.md)。
 
 ## 参与贡献
 

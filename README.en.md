@@ -306,7 +306,7 @@ Not supported, by design. qqmail-cli's entire value proposition is doing one pro
 
 ## Project status
 
-Version `0.6.0` adds server-side search pagination, resumable polling, and an experimental local read-only MCP bridge. It also reserves autosend quota before SMTP submission and reports uncertain delivery as non-retryable. See the [release](https://github.com/sixiang-world/qqmail-cli/releases/tag/v0.6.0), the [changelog](CHANGELOG.md), and the [QQ compatibility records](docs/compat/README.md).
+Source version `0.6.1` adds staged IMAP connection diagnostics and optional image filename extensions. It builds on the v0.6.0 server-search pagination, resumable polling, experimental read-only MCP bridge and autosend safeguards. See [releases](https://github.com/sixiang-world/qqmail-cli/releases), the [changelog](CHANGELOG.md), and the [QQ compatibility records](docs/compat/README.md).
 
 ## Contributing
 
