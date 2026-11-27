@@ -1,6 +1,6 @@
 # 开发路线图 / Development roadmap
 
-状态：v0.7.0 开发项已于 2026-11-27 完成实现并通过合成夹具回归与三平台 CI（v0.8.0 仍为拟议规划，不承诺发布日期）。依据：[Muse Agent 实测报告](research/2026-11-27-muse-agent-field-report.md)。本路线图用稳定任务 ID 与独立 Issue 追踪工作，总追踪见 [#5](https://github.com/sixiang-world/qqmail-cli/issues/5)；不重复已有 PR。
+状态：v0.7.0 开发与发布前安全加固（[#22](https://github.com/sixiang-world/qqmail-cli/pull/22)）已于 2026-11-27 合入 `main` 并通过合成夹具回归与三平台 CI；真实无头云 VM 端到端演练待完成（[#11](https://github.com/sixiang-world/qqmail-cli/issues/11) 保持开放；v0.8.0 仍为拟议规划，不承诺发布日期）。依据：[Muse Agent 实测报告](research/2026-11-27-muse-agent-field-report.md)。本路线图用稳定任务 ID 与独立 Issue 追踪工作，总追踪见 [#5](https://github.com/sixiang-world/qqmail-cli/issues/5)；不重复已有 PR。
 
 ## v0.7.0 — Reliability & Cloud Agent Support
 
@@ -41,7 +41,7 @@ Issue: [#10](https://github.com/sixiang-world/qqmail-cli/issues/10) · PR: [#17]
 
 ### R06 — 云 VM / Muse 部署与排障文档（P1）
 
-Issue: [#11](https://github.com/sixiang-world/qqmail-cli/issues/11)
+Issue: [#11](https://github.com/sixiang-world/qqmail-cli/issues/11) · PR: [#21](https://github.com/sixiang-world/qqmail-cli/pull/21)
 - [x] 记录受支持的网络授权、CLI 安装、密钥环和 D-Bus 依赖、VM 更换与依赖恢复、登录及读写验证；区分已实测与待验证能力（见 [无头 Linux 与云 VM 部署指南](CLOUD_DEPLOYMENT.md)）。
 - [x] 提供诊断决策树；不要求硬编码 QQ 节点、改写安全代理或绕过平台策略；明确密钥环解锁与跨 VM 持久化仍需独立验证。
 - [ ] 验收（真实无头云 VM 端到端演练）：待在明确授权的真实无头 Linux / Muse 环境按文档完成一次完整安装、登录、只读与经许可发信复核（文档链接、格式与无相对时间检查已通过自动化校验）。

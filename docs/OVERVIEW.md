@@ -180,7 +180,7 @@ qqmail-cli forward <id> --to you@example.com [--execute]
 
 ## 10. 项目状态与边界
 
-- 代码版本为 `0.6.1`，新增 IMAP 分阶段诊断与可选图片附件扩展名，保留服务端搜索分页、可恢复只读轮询、实验性本地 MCP 以及自动发送安全约束。
+- 代码版本为 `0.7.0`，新增瞬时网络有界重试与多 IP 故障转移、可选 `auth login --verify-smtp` 与安全端口回退、单次分阶段 `doctor --smtp/--no-auth`、无头 Linux 凭据诊断（含 `auth keyring-test` 与超时不确定语义）、只读 `config validate/policy/diff` 与未知字段防覆盖保护，以及云端无头 VM 部署指南。
 - 全量单元与集成测试、静态守卫、漏洞扫描、PowerShell 5.1 冒烟、六平台构建全部通过；真实 QQ 邮箱的读取与清理已实测走通（脱敏观察见 `docs/compat/`）。
 - **明确不做**：多服务商（专注 QQ 单点做透，多服务商推荐 himalaya）、实时推送（QQ IDLE 不稳定）、网页版专有功能、群发营销、绕过 QQ 风控、永久删除、内置 AI 模型（AI 通过 Skill/MCP 调用 CLI，不绑定任何模型）。
 

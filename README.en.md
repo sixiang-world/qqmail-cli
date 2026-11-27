@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/sixiang-world/qqmail-cli/actions/workflows/ci.yaml/badge.svg)](https://github.com/sixiang-world/qqmail-cli/actions/workflows/ci.yaml)
 [![Release](https://img.shields.io/github/v/release/sixiang-world/qqmail-cli)](https://github.com/sixiang-world/qqmail-cli/releases)
-[![Go](https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go&logoColor=white)](go.mod)
+[![Go](https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go&logoColor=white)](go.mod)
 [![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
 [简体中文](README.md) · **English**
@@ -306,7 +306,7 @@ Not supported, by design. qqmail-cli's entire value proposition is doing one pro
 
 ## Project status
 
-Source version `0.6.1` adds staged IMAP connection diagnostics and optional image filename extensions. It builds on the v0.6.0 server-search pagination, resumable polling, experimental read-only MCP bridge and autosend safeguards. See [releases](https://github.com/sixiang-world/qqmail-cli/releases), the [changelog](CHANGELOG.md), and the [QQ compatibility records](docs/compat/README.md).
+Source version `0.7.0` adds bounded pre-auth network retry and multi-IP failover, opt-in `auth login --verify-smtp` and strict 465-to-587 STARTTLS fallback, single-pass stage-by-stage `doctor --smtp/--smtp-only/--no-auth`, headless Linux credential store diagnostics and `auth keyring-test` with explicit timeout-uncertainty reporting, read-only `config validate/policy/diff` with unknown-key fail-closed and rewrite guards, and the [headless Linux & cloud VM deployment guide](docs/CLOUD_DEPLOYMENT.md). See [releases](https://github.com/sixiang-world/qqmail-cli/releases), the [changelog](CHANGELOG.md), and the [QQ compatibility records](docs/compat/README.md).
 
 ## Contributing
 

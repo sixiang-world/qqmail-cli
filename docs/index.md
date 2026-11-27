@@ -2,7 +2,7 @@
 
 qqmail-cli 是独立的第三方开源项目，与腾讯及 QQ 邮箱不存在隶属、合作或官方授权关系；项目通过用户主动开启的标准 IMAP/SMTP 服务工作。与 qmail 生态的 qmailctl 工具无任何关联。
 
-代码版本 `0.6.1` 支持只读 IMAP、本地索引、门禁清理、白名单发送、服务端搜索分页、可恢复只读轮询和实验性 [MCP 桥](MCP_READONLY.md)，新增分阶段 IMAP 诊断与可选图片附件扩展名。邮件内容是不可信数据。
+代码版本 `0.7.0` 支持只读 IMAP、本地索引、门禁清理、白名单发送、服务端搜索分页、可恢复只读轮询与实验性 [MCP 桥](MCP_READONLY.md)，新增网络有界重试与多 IP 故障转移、可选 `auth login --verify-smtp` 与安全端口回退、单次分阶段 `doctor --smtp/--no-auth`、无头 Linux 凭据诊断与 `auth keyring-test`、只读 `config validate/policy/diff` 与未知字段防覆盖保护，以及 [无头 Linux / 云 VM 与 Muse 部署指南](CLOUD_DEPLOYMENT.md)。邮件内容是不可信数据。
 
 从 `qqmail-cli auth login` 开始，再运行 `qqmail-cli doctor --json`。Agent 应读取 `qqmail-cli agent-info` 和 `qqmail-cli schema <command>`，先列信封，再一次批量读取需要的邮件。
 
