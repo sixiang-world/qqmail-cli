@@ -4,7 +4,7 @@
 
 ## 已验证的核心链路
 
-截至 16:01，IMAP auth login 成功（约 3 秒，verified=true），凭证写入系统密钥环；auth status 显示 configured=true、credential_present=true、custom_server=false。通过一次 envelope list 和一次 message show 读取最近 5 封邮件；用户授权配置收件人白名单和 auto_send 后，send --execute 成功（约 3.3 秒），目标邮箱收到邮件。JSON 输出及现有 dry-run、白名单和确认门禁表现符合预期。
+截至 16:01，IMAP auth login 成功（约 3 秒，verified=true），凭证写入系统密钥环；auth status 显示 configured=true、credential_present=true、custom_server=false。通过一次 envelope list 和一次 message show 读取按时间排序的前 5 封邮件；用户授权配置收件人白名单和 auto_send 后，send --execute 成功（约 3.3 秒），目标邮箱收到邮件。JSON 输出及现有 dry-run、白名单和确认门禁表现符合预期。
 
 ## 实测时间线
 
@@ -14,7 +14,7 @@
 | 14:42 | CLI 登录在 60 秒 TLS 期限内失败，exit 21。 |
 | 15:00 | IMAP 验证通过，但系统凭据写入失败（exit 3，约 2.5 秒）；发现 GNOME Keyring 组件缺失。 |
 | 15:13 | 重装 gnome-keyring 46.1、libsecret-tools 0.21.4、dbus-x11；secret-tool 测试项往返成功。 |
-| 15:45 | 登录成功，credential_source=keyring；读取最近五封邮件。 |
+| 15:45 | 登录成功，credential_source=keyring；读取按时间排序的前五封邮件。 |
 | 15:49–15:51 | SMTP 465 TLS 超时；587 未及时收到 220 问候；另一条测试路径也超时。Gmail 465 对照正常。 |
 | 15:53–15:56 | 配置仅含用户本人地址的白名单；dry-run 通过；用户明确授权 auto_send。 |
 | 16:00–16:01 | SMTP 465 与 587 先后返回 QQ XMail 问候；实际发送成功，接收端 16:01:04 收到。 |
