@@ -1,1 +1,92 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://github.com/sixiang-world/qqmail-cli/schemas/auth.login.schema.json","allOf":[{"$ref":"envelope-common.schema.json"},{"properties":{"command":{"const":"auth.login"},"data":{"type":"object","required":["name","email","server","credential_source","verified"]}}}]}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sixiang-world/qqmail-cli/schemas/auth.login.schema.json",
+  "allOf": [
+    {
+      "$ref": "envelope-common.schema.json"
+    },
+    {
+      "properties": {
+        "command": {
+          "const": "auth.login"
+        }
+      },
+      "if": {
+        "properties": {
+          "ok": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "name",
+              "email",
+              "server",
+              "credential_source",
+              "verified"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "server": {
+                "type": "string"
+              },
+              "credential_source": {
+                "type": "string"
+              },
+              "verified": {
+                "type": "boolean"
+              },
+              "imap_verified": {
+                "type": "boolean"
+              },
+              "smtp_checked": {
+                "type": "boolean"
+              },
+              "smtp_verified": {
+                "type": "boolean"
+              },
+              "smtp_server": {
+                "type": "string"
+              },
+              "smtp_endpoint": {
+                "type": "string"
+              },
+              "smtp_transport": {
+                "type": "string",
+                "enum": [
+                  "implicit_tls",
+                  "starttls"
+                ]
+              },
+              "smtp_fallback_used": {
+                "type": "boolean"
+              },
+              "smtp_extensions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "data": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ]
+}

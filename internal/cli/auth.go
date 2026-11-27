@@ -27,11 +27,12 @@ func newAuthCommand(rt *Runtime) *cobra.Command {
 
 func newAuthLoginCommand(rt *Runtime) *cobra.Command {
 	var email, name string
-	var fromStdin bool
+	var fromStdin, verifySMTP bool
 	cmd := &cobra.Command{Use: "login", Short: "Validate and securely store an authorization code", Args: cobra.NoArgs}
 	cmd.Flags().StringVar(&email, "email", "", "QQ Mail address")
 	cmd.Flags().StringVar(&name, "name", "personal", "local account name")
 	cmd.Flags().BoolVar(&fromStdin, "auth-code-stdin", false, "read the authorization code from standard input")
+	cmd.Flags().BoolVar(&verifySMTP, "verify-smtp", false, "also verify SMTP authentication without sending mail")
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		if err := policy.RequireMutationAllowed(); err != nil {
 			return err
@@ -93,6 +94,41 @@ func newAuthLoginCommand(rt *Runtime) *cobra.Command {
 		if err := reader.Logout(ctx); err != nil && rt.Verbose {
 			_, _ = fmt.Fprintln(rt.Err, output.RedactString("LOGOUT 警告："+err.Error()))
 		}
+		smtpServer := named.SMTPHost + ":" + fmt.Sprint(named.SMTPPort)
+		data := map[string]any{
+			"name":              name,
+			"email":             email,
+			"server":            named.IMAPHost + ":" + fmt.Sprint(named.IMAPPort),
+			"credential_source": rt.Secrets.Source(),
+			"verified":          true,
+			"imap_verified":     true,
+			"smtp_checked":      verifySMTP,
+			"smtp_verified":     false,
+			"smtp_server":       smtpServer,
+		}
+		if verifySMTP {
+			smtpRes, smtpErr := rt.VerifySMTP(ctx, named, authCode)
+			if smtpErr != nil {
+				classified := errmap.Classify(smtpErr).WithContext(map[string]any{
+					"imap_verified": true,
+					"smtp_checked":  true,
+					"smtp_verified": false,
+					"smtp_server":   smtpServer,
+				})
+				if classified.Suggestion == "" {
+					classified.Suggestion = "如仅需只读访问，可不加 --verify-smtp 重新登录；也可运行 doctor --smtp 排查 SMTP 阶段故障"
+				} else {
+					classified.Suggestion += "；如仅需只读访问，可省略 --verify-smtp，或用 doctor --smtp 排查"
+				}
+				return classified
+			}
+			data["smtp_verified"] = true
+			data["smtp_server"] = smtpRes.Server
+			data["smtp_endpoint"] = smtpRes.Endpoint
+			data["smtp_transport"] = smtpRes.Transport
+			data["smtp_fallback_used"] = smtpRes.FallbackUsed
+			data["smtp_extensions"] = smtpRes.Extensions
+		}
 		if err := rt.Secrets.Set(email, authCode); err != nil {
 			return err
 		}
@@ -100,9 +136,12 @@ func newAuthLoginCommand(rt *Runtime) *cobra.Command {
 			_ = rt.Secrets.Delete(email)
 			return err
 		}
-		data := map[string]any{"name": name, "email": email, "server": named.IMAPHost + ":" + fmt.Sprint(named.IMAPPort), "credential_source": rt.Secrets.Source(), "verified": true}
 		return writeResult(rt, cmd, data, func(w io.Writer) error {
-			_, err := fmt.Fprintf(w, "账号 %s 已验证并保存。\n", name)
+			if verifySMTP {
+				_, err := fmt.Fprintf(w, "账号 %s 已完成 IMAP 与 SMTP 验证并保存。\n", name)
+				return err
+			}
+			_, err := fmt.Fprintf(w, "账号 %s 已验证并保存（仅验证 IMAP；如需同时检查发信能力可加 --verify-smtp）。\n", name)
 			return err
 		})
 	}

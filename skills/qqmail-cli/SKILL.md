@@ -13,7 +13,7 @@ Use `qqmail-cli agent-info` as the current capability and risk source of truth. 
 
 ## Account and read workflow
 
-1. If no account is ready, ask the user to run `qqmail-cli auth login` interactively. Never request, display, store, or place an authorization code in an argument, log, fixture, or prompt.
+1. If no account is ready, ask the user to run `qqmail-cli auth login` interactively (IMAP-only by default so read-only sessions are not blocked by SMTP; add `--verify-smtp` only when the user explicitly wants SMTP auth verified too). Never request, display, store, or place an authorization code in an argument, log, fixture, or prompt.
 2. Use `auth status --json` for local status and `doctor --json` only for connection diagnosis.
 3. Run one filtered `envelope list --json` call and inspect metadata first.
 4. Pass all selected IDs to one `message show <id>... --json` call. Do not launch one CLI process per message; frequent QQ logins can be rate-limited.
