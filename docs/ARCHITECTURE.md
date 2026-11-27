@@ -116,6 +116,13 @@ Draft
 
 465 连接或 TLS 建立失败时才回退 587；认证或投递失败不跨端口重试，避免不确定投递后的重复发送。每次命令只生成一个 SMTP envelope。
 
+## 配置审查与权限边界
+
+`config validate`、`config policy` 与 `config diff --proposed <file>` 均为纯本地只读命令（不读凭据、不联网、不写文件），用于严格校验 TOML、预览生效策略以及按 `expands`/`restricts`/`neutral` 审查待应用变更。
+
+- `account.Load` 对普通命令保持宽松兼容，但会记录顶层与账号段中的未知键名（不改变既有 JSON/TOML 输出）；当 `auto_send = true` 且存在未知键名时，自动发送按 fail closed 拒绝，防止拼写错误使 `send_blacklist` 等规则静默失效。
+- `send_allowlist`、`send_blacklist` 与 `auto_send` 不提供 CLI 写入命令，也不以 Agent 可自行附加的 `--confirm` 替代可信人工授权。由于同一操作系统用户可直接编辑该 TOML 文件，项目明确声明配置门禁防的是误操作与不可信邮件内容诱导，不是不可绕过的操作系统隔离边界。
+
 ## 输出与 Agent 契约
 
 普通命令的 JSON 包络固定包含：

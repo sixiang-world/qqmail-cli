@@ -173,6 +173,7 @@ func NewRoot(rt *Runtime) *cobra.Command {
 
 	root.AddCommand(
 		newVersionCommand(rt), newCompletionCommand(root), newAuthCommand(rt), newAccountCommand(rt),
+		newConfigCommand(rt),
 		newFolderCommand(rt), newEnvelopeCommand(rt), newMessageCommand(rt), newAttachmentCommand(rt),
 		newExportCommand(rt), newDoctorCommand(rt), newAgentInfoCommand(rt), newSchemaCommand(rt),
 		newSyncCommand(rt), newLocalSearchCommand(rt),

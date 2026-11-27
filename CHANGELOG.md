@@ -4,6 +4,18 @@ All notable development changes are recorded here. Formal releases remain owner-
 
 ## Unreleased
 
+### Added (2026-11-27 configuration validation and policy review — R05)
+
+- `config validate`: strictly parses `config.toml` (`--config` or `--file`, never treating a missing file as valid) and reports structured diagnostics (`severity`, `code`, `path`, `message`, optional `line`/`column`) for TOML syntax errors, unknown/misspelled fields, type mismatches, unsupported `schema`, missing/unknown `default_account`, invalid account names/emails/hosts/ports, malformed `send_allowlist`/`send_blacklist` entries (including unsupported wildcards in `send_blacklist`), negative or zero `daily_auto_limit`, broad public-domain allowlist wildcards, redundant blacklist entries, custom server endpoints, and `auto_send = true` with an empty allowlist. Exits 0 on valid configs (with or without warnings) and exits 3 (`config`) with `error.context.diagnostics` when any error is present.
+- `config policy`: read-only effective policy preview per account (or filtered by `--account`, with optional `--file`) showing resolved IMAP/SMTP endpoints (`custom_imap`/`custom_smtp`), `send_allowlist`/`allowlist_ready`, `send_blacklist`, `auto_send`/`auto_send_effective`, normalized `daily_auto_limit`, `unknown_keys`, current `readonly` state, and an explicit `policy_boundary_note` without touching credentials or the network.
+- `config diff --proposed <file>`: read-only policy review comparing the current config against a proposed TOML file, strictly validating both and classifying each effective change as `expands`, `restricts`, or `neutral` with an `expands_permissions` summary so humans can review Agent-proposed edits before applying them by hand.
+- Embedded JSON schemas (`config.validate`, `config.policy`, `config.diff`) and `agent-info` read-level catalog registration.
+
+### Security (2026-11-27 configuration validation and policy review — R05)
+
+- `account.Load` stays lenient for ordinary commands while recording unrecognized top-level and account-level TOML keys (omitted from existing JSON/TOML output). When `auto_send = true` and any unknown key is present (for example a misspelled `send_blaklist`), unattended sending now fails closed with `policy_denied` (exit 50) instead of silently ignoring the typo.
+- Documented the TOML permission boundary and why no CLI write path is added for `send_allowlist`, `send_blacklist`, or `auto_send`: a `--confirm` flag that an Agent can append is not trusted human authorization, and the same OS user can edit `config.toml` directly.
+
 ### Added (2026-11-27 SMTP verification and secure fallback — R02)
 
 - Add opt-in `auth login --verify-smtp` to verify SMTP authentication (via

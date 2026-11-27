@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sixiang-world/qqmail-cli/schemas/config.policy.schema.json",
+  "allOf": [
+    {
+      "$ref": "envelope-common.schema.json"
+    },
+    {
+      "properties": {
+        "command": {
+          "const": "config.policy"
+        }
+      },
+      "if": {
+        "properties": {
+          "ok": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "config_path",
+              "exists",
+              "default_account",
+              "readonly",
+              "unknown_keys",
+              "accounts",
+              "policy_boundary_note"
+            ],
+            "properties": {
+              "config_path": {
+                "type": "string"
+              },
+              "exists": {
+                "type": "boolean"
+              },
+              "default_account": {
+                "type": "string"
+              },
+              "readonly": {
+                "type": "boolean"
+              },
+              "unknown_keys": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "accounts": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/accountPolicy"
+                }
+              },
+              "policy_boundary_note": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "accountPolicy": {
+      "type": "object",
+      "required": [
+        "name",
+        "email",
+        "is_default",
+        "imap_host",
+        "imap_port",
+        "custom_imap",
+        "smtp_host",
+        "smtp_port",
+        "custom_smtp",
+        "send_allowlist",
+        "allowlist_ready",
+        "send_blacklist",
+        "auto_send",
+        "auto_send_effective",
+        "daily_auto_limit",
+        "daily_auto_limit_default",
+        "unknown_keys",
+        "auto_send_block_reasons"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "is_default": {
+          "type": "boolean"
+        },
+        "imap_host": {
+          "type": "string"
+        },
+        "imap_port": {
+          "type": "integer"
+        },
+        "custom_imap": {
+          "type": "boolean"
+        },
+        "smtp_host": {
+          "type": "string"
+        },
+        "smtp_port": {
+          "type": "integer"
+        },
+        "custom_smtp": {
+          "type": "boolean"
+        },
+        "send_allowlist": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "allowlist_ready": {
+          "type": "boolean"
+        },
+        "send_blacklist": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "auto_send": {
+          "type": "boolean"
+        },
+        "auto_send_effective": {
+          "type": "boolean"
+        },
+        "daily_auto_limit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "daily_auto_limit_default": {
+          "type": "boolean"
+        },
+        "unknown_keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "auto_send_block_reasons": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "readonly",
+              "empty_allowlist",
+              "unknown_keys"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

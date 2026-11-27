@@ -463,6 +463,25 @@ daily_auto_limit = 50            # 每日自动发送上限；缺省或 ≤0 一
 - `auto_send = true` 且黑名单未命中 → 跳过 TTY 确认直接发送；当日自动计数达到 `daily_auto_limit` → `policy_denied`（退出码 50，不可重试），次日自动重置。
 - 发出的邮件、命令输出与人工发送逐字段一致：没有 "auto" 标记、没有新字段、审计不变；本地计数器只是配置目录下的 `autosend-state.json`（日期 + 次数），不进审计也不进输出。
 - 每日计数器是配置目录下的**全局单文件**（不按账号区分），多个账号共享同一每日配额。
+- 若账号配置或顶层存在未识别的未知字段（例如拼错为 `send_blaklist`），开启 `auto_send` 时会自动拒绝无人值守发送（`policy_denied` / 退出码 50，fail closed），避免拼写错误让黑名单静默失效。
+
+### 配置校验与策略审查（config validate / policy / diff）
+
+以下三条命令均为纯本地只读命令：不读取凭据管理器、不连接 IMAP/SMTP、不修改任何文件，在 `QQMAIL_CLI_READONLY=1` 下同样可用。
+
+```powershell
+.\bin\qqmail-cli.exe config validate --json
+.\bin\qqmail-cli.exe config validate --file .\proposed.toml --json
+.\bin\qqmail-cli.exe config policy --json
+.\bin\qqmail-cli.exe config policy --account personal --json
+.\bin\qqmail-cli.exe config diff --proposed .\proposed.toml --json
+```
+
+- `config validate`：严格解析配置，报告缺失文件、TOML 语法错误（含行列）、未知/拼错字段、类型错误、不支持的 `schema`、缺失或无效的 `default_account`、非法账号名/邮箱/端口/主机、无效白名单或黑名单条目（包括 `send_blacklist` 中不受支持的通配符）、负数 `daily_auto_limit`，并对公共域通配符（如 `*@qq.com`）、自定义服务器端点、冗余黑名单、空白名单配 `auto_send` 与 `daily_auto_limit = 0` 归一化为 50 发出警告。存在 `error` 时退出码为 3，并将完整诊断附在 `error.context.diagnostics`；仅有 `warning`/`info` 时退出码为 0。
+- `config policy`：展示每个账号实际生效的 IMAP/SMTP 端点、白名单就绪状态、黑名单、归一化后的 `daily_auto_limit`、是否存在阻断自动发送的 `unknown_keys` 与当前 `readonly` 状态。
+- `config diff --proposed <file>`：先严格校验当前配置与建议配置，再按 `expands` / `restricts` / `neutral` 分类每一项有效策略差异，并汇总 `expands_permissions` 供人工在手改配置前审阅。
+
+`send_allowlist`、`send_blacklist` 与 `auto_send` 刻意不提供 CLI 写入命令（仅由人工编辑配置文件）；同时需注意同一操作系统用户本就可直接改写该 TOML 文件，因此配置门禁面向的是防误操作和防不可信邮件内容诱导，不是不可绕过的操作系统隔离边界。
 
 ## 15. Agent 只读模式
 

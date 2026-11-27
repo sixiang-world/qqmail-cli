@@ -81,7 +81,22 @@ Each invocation submits at most one message. On `rate_limited`, stop immediately
 
 ### Auto-sending
 
-With `auto_send = true` in the account config, an allowlisted `--execute` send whose recipients are all outside `send_blacklist` completes without the TTY prompt and without reading stdin, under `daily_auto_limit` (default 50/day, local counter only — it never appears in output or audit). The quota is reserved under a cross-process file lock before SMTP submission and never refunded: a failed or uncertain send still consumes today's quota, and a corrupt counter or a future-dated counter (clock rollback) refuses unattended sending outright. Any blacklisted recipient falls back to the full interactive gate; `QQMAIL_CLI_READONLY=1` still refuses everything. Allowlist and blacklist have no CLI write path: only a human edits config.
+With `auto_send = true` in the account config, an allowlisted `--execute` send whose recipients are all outside `send_blacklist` completes without the TTY prompt and without reading stdin, under `daily_auto_limit` (default 50/day, local counter only — it never appears in output or audit). The quota is reserved under a cross-process file lock before SMTP submission and never refunded: a failed or uncertain send still consumes the daily quota, and a corrupt counter, a future-dated counter (clock rollback), or any unknown key in the account/top-level config (such as a misspelled `send_blaklist`) refuses unattended sending outright (`policy_denied`, exit 50). Any blacklisted recipient falls back to the full interactive gate; `QQMAIL_CLI_READONLY=1` still refuses everything. Allowlist, blacklist, and `auto_send` have no CLI write path: only a human edits config.
+
+### Configuration validation and policy review
+
+Use the read-only `config` commands (safe under `QQMAIL_CLI_READONLY=1`; they never read credentials, dial the network, or write files) before troubleshooting send denials or reviewing proposed edits:
+
+```text
+qqmail-cli config validate --json
+qqmail-cli config policy --json
+qqmail-cli config diff --proposed proposed.toml --json
+```
+
+- Run `config validate` to catch invalid TOML, unknown/misspelled keys, wrong types, invalid allowlist/blacklist entries, or overly broad public-domain wildcards.
+- Run `config policy` to inspect effective endpoints, allowlist readiness, normalized `daily_auto_limit`, and any `unknown_keys` blocking `auto_send`.
+- When suggesting a configuration change, write the candidate to a separate file, run `config diff --proposed <file> --json`, and present the classified changes (`expands`/`restricts`/`neutral`) and `expands_permissions` flag to the human to review and apply manually.
+- Never edit `send_allowlist`, `send_blacklist`, or `auto_send` in `config.toml` without explicit human instruction. The CLI intentionally exposes no write command for those fields, and the TOML file being writable by the same OS user is not an authorization to widen permissions.
 
 Do not retry a send that exited with `delivery_uncertain` (exit 20, `retryable` false): the server may have accepted the delivery. Check the sent folder or the recipient, then decide as a human whether to resend.
 

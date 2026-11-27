@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +15,9 @@ import (
 
 	"github.com/situker/qqmail-cli/internal/account"
 	"github.com/situker/qqmail-cli/internal/errmap"
+	"github.com/situker/qqmail-cli/internal/index"
+	"github.com/situker/qqmail-cli/internal/secrets"
+	"github.com/situker/qqmail-cli/internal/sendmail"
 )
 
 func TestAutoSendCorruptStateFailsClosed(t *testing.T) {
@@ -190,4 +196,124 @@ func TestAutoSendQuotaIndependentProcesses(t *testing.T) {
 	if state.Count != 4 || state.Date != "2026-11-06" {
 		t.Fatalf("cross-process cap bypassed: %+v / %s", state, strings.TrimSpace(string(raw)))
 	}
+}
+
+// A misspelled key such as send_blaklist must never silently disable a safety
+// rule while auto_send = true remains active: autosend fails closed with
+// PolicyDenied, while manual TTY sends stay backward-compatible.
+func TestAutoSendUnknownKeysFailClosed(t *testing.T) {
+	t.Setenv("QQMAIL_CLI_READONLY", "0")
+	withAutoSendStateDir(t)
+	letter := writeDraftFile(t, "to = [\"reader@example.com\"]\nsubject = \"信件\"\nbody = \"你好\"\n")
+
+	cases := []struct {
+		name      string
+		configRaw string
+		wantKey   string
+	}{
+		{
+			name: "misspelled account send_blacklist fails closed",
+			configRaw: `
+schema = 1
+default_account = "personal"
+
+[accounts.personal]
+email = "user@qq.com"
+send_allowlist = ["reader@example.com"]
+auto_send = true
+send_blaklist = ["reader@example.com"]
+`,
+			wantKey: "accounts.personal.send_blaklist",
+		},
+		{
+			name: "misplaced top-level send_blacklist fails closed",
+			configRaw: `
+schema = 1
+default_account = "personal"
+send_blacklist = ["reader@example.com"]
+
+[accounts.personal]
+email = "user@qq.com"
+send_allowlist = ["reader@example.com"]
+auto_send = true
+`,
+			wantKey: "send_blacklist",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "config.toml")
+			if err := os.WriteFile(configPath, []byte(tc.configRaw), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			sent := false
+			rt := &Runtime{
+				Out: &bytes.Buffer{}, Err: &bytes.Buffer{}, In: strings.NewReader("SEND\n"),
+				Secrets:    &secrets.Memory{Values: map[string]string{"user@qq.com": testAuthCode}},
+				IsTerminal: func(io.Reader) bool { return false },
+				SendMail: func(context.Context, account.Named, string, sendmail.Draft, []byte) error {
+					sent = true
+					return nil
+				},
+			}
+			root := NewRoot(rt)
+			root.SetArgs([]string{"--config", configPath, "send", "--draft-file", letter, "--execute"})
+			err := root.Execute()
+			if err == nil || errmap.Classify(err).Kind != errmap.PolicyDenied || sent {
+				t.Fatalf("unknown key must fail closed on autosend: err=%v sent=%v", err, sent)
+			}
+			keys, _ := errmap.Classify(err).Context["unknown_keys"].([]string)
+			if len(keys) == 0 || keys[0] != tc.wantKey {
+				t.Fatalf("expected unknown_keys=%q in context, got %#v", tc.wantKey, errmap.Classify(err).Context)
+			}
+		})
+	}
+
+	t.Run("reserveAutoSend refuses unknown keys as defense in depth", func(t *testing.T) {
+		named := account.Named{AutoSend: true, DailyAutoLimit: 50, UnknownKeys: []string{"accounts.personal.send_blaklist"}}
+		err := reserveAutoSend(named, time.Now())
+		if err == nil || errmap.Classify(err).Kind != errmap.PolicyDenied {
+			t.Fatalf("reserveAutoSend must fail closed on unknown keys: %v", err)
+		}
+	})
+
+	t.Run("manual send with auto_send=false remains backward-compatible", func(t *testing.T) {
+		configPath := filepath.Join(t.TempDir(), "config.toml")
+		raw := `
+schema = 1
+default_account = "personal"
+
+[accounts.personal]
+email = "user@qq.com"
+send_allowlist = ["reader@example.com"]
+auto_send = false
+extra_note = "legacy"
+`
+		if err := os.WriteFile(configPath, []byte(raw), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cachePath := testCachePath(t)
+		sent := 0
+		rt := &Runtime{
+			Build: BuildInfo{Version: "test"}, Out: &bytes.Buffer{}, Err: &bytes.Buffer{}, In: strings.NewReader("SEND\n"),
+			Secrets:    &secrets.Memory{Values: map[string]string{"user@qq.com": testAuthCode}},
+			IsTerminal: func(io.Reader) bool { return true },
+			IndexOpen: func(_ string, write bool) (*index.DB, error) {
+				return index.OpenPath(cachePath, write)
+			},
+			SendMail: func(context.Context, account.Named, string, sendmail.Draft, []byte) error {
+				sent++
+				return nil
+			},
+		}
+		root := NewRoot(rt)
+		root.SetArgs([]string{"--config", configPath, "send", "--draft-file", letter, "--execute"})
+		if err := root.Execute(); err != nil {
+			t.Fatalf("manual TTY send should stay lenient when auto_send=false: %v", err)
+		}
+		if sent != 1 {
+			t.Fatalf("sent = %d, want 1", sent)
+		}
+	})
 }

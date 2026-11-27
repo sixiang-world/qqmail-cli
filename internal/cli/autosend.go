@@ -98,6 +98,15 @@ func autoSendStateError(err error) error {
 	}
 }
 
+func autoSendUnknownKeysError(keys []string) error {
+	return &errmap.Error{
+		Kind:       errmap.PolicyDenied,
+		Message:    "账号配置存在未知字段，已拒绝自动发送（fail closed）",
+		Suggestion: "请先运行 qqmail-cli config validate 检查并修正配置中的未知字段（例如拼错的 send_blacklist）",
+		Context:    map[string]any{"unknown_keys": append([]string(nil), keys...)},
+	}
+}
+
 func effectiveAutoSendLimit(named account.Named) int {
 	if named.DailyAutoLimit > 0 {
 		return named.DailyAutoLimit
@@ -110,6 +119,11 @@ func effectiveAutoSendLimit(named account.Named) int {
 func autoSendEligible(named account.Named, recipients []string, now time.Time) (bool, error) {
 	if !named.AutoSend {
 		return false, nil
+	}
+	// Fail closed when the config file carried unrecognized keys (for example a
+	// misspelled send_blacklist): silent drops must never widen unattended send.
+	if len(named.UnknownKeys) > 0 {
+		return false, autoSendUnknownKeysError(named.UnknownKeys)
 	}
 	blacklist := blackSet(named.SendBlacklist)
 	for _, recipient := range recipients {
@@ -133,6 +147,9 @@ func autoSendEligible(named account.Named, recipients []string, now time.Time) (
 // A successful reservation counts even if SMTP subsequently fails, since a
 // failed SMTP call can leave delivery uncertain.
 func reserveAutoSend(named account.Named, now time.Time) error {
+	if len(named.UnknownKeys) > 0 {
+		return autoSendUnknownKeysError(named.UnknownKeys)
+	}
 	path, err := autoSendStatePath()
 	if err != nil {
 		return autoSendStateError(err)
