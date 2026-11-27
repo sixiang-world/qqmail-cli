@@ -84,6 +84,59 @@
         "properties": {
           "data": {
             "type": "null"
+          },
+          "error": {
+            "type": "object",
+            "properties": {
+              "context": {
+                "type": "object",
+                "properties": {
+                  "stage": {
+                    "type": "string"
+                  },
+                  "imap_verified": {
+                    "type": "boolean"
+                  },
+                  "smtp_checked": {
+                    "type": "boolean"
+                  },
+                  "smtp_verified": {
+                    "type": "boolean"
+                  },
+                  "smtp_server": {
+                    "type": "string"
+                  },
+                  "credential_saved": {
+                    "type": "boolean"
+                  },
+                  "config_saved": {
+                    "type": "boolean"
+                  },
+                  "credential_store": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "enum": [
+                      "no_session_bus",
+                      "service_unavailable",
+                      "locked",
+                      "permission_denied",
+                      "timeout",
+                      "unknown"
+                    ]
+                  },
+                  "platform": {
+                    "type": "string"
+                  },
+                  "dbus_session_bus_set": {
+                    "type": "boolean"
+                  },
+                  "observed": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
           }
         }
       }

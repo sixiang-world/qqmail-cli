@@ -36,7 +36,7 @@ pwsh -File .\scripts\check-docs.ps1
 - govulncheck 输出 `No vulnerabilities found.`。
 - 文档检查输出 `qqmail-cli documentation checks passed`。
 
-本轮测试覆盖 schema 契约、readonly 命令面、写调用静态边界、无裸 EXPUNGE 线缆守卫、MIME、白名单、配置严格校验/策略预览/差异分类、未知字段 autosend fail-closed、审计脱敏和 panic 脱敏。
+本轮测试覆盖 schema 契约、readonly 命令面、写调用静态边界、无裸 EXPUNGE 线缆守卫、MIME、白名单、配置严格校验/策略预览/差异分类、未知字段 autosend fail-closed、审计脱敏、panic 脱敏，以及系统凭据管理器故障分类与 `auth keyring-test` 合成夹具测试（单测不访问宿主真实凭据管理器）。如需在真实机器或无头 Linux 上人工验证系统密钥环，可在非只读终端显式运行 `qqmail-cli auth keyring-test --json`。
 
 ## B. P0 Windows 构建与冒烟
 

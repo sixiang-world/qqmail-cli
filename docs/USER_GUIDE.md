@@ -70,6 +70,20 @@ Remove-Item Env:QQMAIL_CLI_READONLY -ErrorAction SilentlyContinue
 
 无头环境只有显式添加 `--auth-code-env` 时才读取 `QQMAIL_CLI_AUTH_CODE`。环境变量可能进入进程转储、CI 配置或子进程，不应作为日常方案，用完立即清除。
 
+### 无头 Linux 凭据管理器排查与 `auth keyring-test`
+
+在无头 Linux（如云 VM 或容器）中，`qqmail-cli` 仍通过系统 Secret Service（D-Bus）保存授权码，绝不自动回退到明文文件。当 D-Bus 会话总线缺失、GNOME Keyring 未安装或登录密钥环被锁定时：
+
+- `auth login` 若已通过 IMAP 验证但写入凭据管理器失败，会返回配置错误（退出码 3），并在 `error.context` 中标注 `stage="credential_store"`、`imap_verified=true`、`credential_saved=false`、`config_saved=false` 及分类后的 `reason`（`no_session_bus`、`service_unavailable`、`locked`、`permission_denied`、`timeout`、`unknown`）。此时登录尚未完成，本地账号配置不会写入，修复凭据管理器后需重新运行 `auth login`。
+- `auth status --json` 在凭据管理器异常时会保留 `credential_present=false`，同时追加 `credential_store_status="error"`、`credential_store_reason` 与 `credential_store_suggestion`，便于与“尚未登录（`not_found`）”区分。
+- 可在人工终端中（关闭 `QQMAIL_CLI_READONLY` 且不带 `--auth-code-env`）运行显式自检命令验证系统凭据管理器的写、读、比对、删除闭环：
+
+```bash
+qqmail-cli auth keyring-test --json
+```
+
+`auth keyring-test` 仅在服务名 `qqmail-cli` 下使用固定测试项 `__qqmail-cli-keyring-probe__` 写入随机值、读回比对并尝试删除，不触碰真实账号凭证，也不连接邮件服务器。在 Linux 无头环境下，通常需要安装 `gnome-keyring`、`libsecret-tools` 与 `dbus-user-session`（或 `dbus-x11`），确认存在可用的 D-Bus 会话总线（例如经 `dbus-run-session -- ...` 启动）且登录密钥环已解锁；单次临时调用也可显式搭配 `--auth-code-env` 与 `QQMAIL_CLI_AUTH_CODE`。
+
 ## 4. PowerShell 5.1 中文设置
 
 在 PowerShell 5.1 中处理中文 JSON 前设置：
