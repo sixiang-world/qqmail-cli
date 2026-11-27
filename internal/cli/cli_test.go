@@ -254,6 +254,7 @@ func TestReadonlyEnvironmentBlocksEveryMutatingCommandBeforeDial(t *testing.T) {
 		{"--config", configPath, "auth", "logout", "--name", "personal"},
 		{"--config", configPath, "account", "use", "personal"},
 		{"--config", configPath, "attachment", "download", id, "all", "--output", dir},
+		{"--config", configPath, "attachment", "download", id, "all", "--output", dir, "--image-extension"},
 		{"--config", configPath, "export", "--all", "--output", dir},
 		{"--config", configPath, "sync"},
 		{"--config", configPath, "triage", "plan", "--output", filepath.Join(dir, "new-plan.json")},

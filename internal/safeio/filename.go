@@ -5,14 +5,44 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 )
 
+const maxFilenameBytes = 150
+
 var windowsReserved = regexp.MustCompile(`(?i)^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?$`)
 
 func SanitizeFilename(name string, fallback string) string {
+	name = truncateUTF8(sanitizeFilename(name, fallback), maxFilenameBytes)
+	if name == "" {
+		return fallback
+	}
+	return name
+}
+
+// SanitizeFilenameWithExtension appends a trusted extension or retains a
+// matching extension, reserving space for it within the filename length limit.
+// The extension and its aliases must include their leading dot.
+func SanitizeFilenameWithExtension(name, fallback, extension string, aliases ...string) string {
+	name = sanitizeFilename(name, fallback)
+	existing := filepath.Ext(name)
+	if strings.EqualFold(existing, extension) || slices.ContainsFunc(aliases, func(alias string) bool {
+		return strings.EqualFold(existing, alias)
+	}) {
+		name = strings.TrimSuffix(name, existing)
+		extension = existing
+	}
+	name = strings.TrimRight(truncateUTF8(name, maxFilenameBytes-len(extension)), " .")
+	if name == "" || windowsReserved.MatchString(name) {
+		name = fallback
+	}
+	return name + extension
+}
+
+func sanitizeFilename(name, fallback string) string {
 	name = filepath.Base(strings.ReplaceAll(name, "\\", "/"))
 	name = strings.Map(func(r rune) rune {
 		if r == '/' || r == '\\' || unicode.IsControl(r) || (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069) {
@@ -23,10 +53,6 @@ func SanitizeFilename(name string, fallback string) string {
 	name = strings.ReplaceAll(name, "..", "")
 	name = strings.Trim(name, " .")
 	if name == "" || windowsReserved.MatchString(name) {
-		name = fallback
-	}
-	name = truncateUTF8(name, 150)
-	if name == "" {
 		return fallback
 	}
 	return name

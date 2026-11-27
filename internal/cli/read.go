@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -353,9 +354,11 @@ func newAttachmentListCommand(rt *Runtime) *cobra.Command {
 func newAttachmentDownloadCommand(rt *Runtime) *cobra.Command {
 	var outputDir string
 	var maxSize int64
+	var imageExtension bool
 	cmd := &cobra.Command{Use: "download <id> <index|all>", Args: cobra.ExactArgs(2), Short: "Download selected attachments without overwriting files"}
 	cmd.Flags().StringVar(&outputDir, "output", "", "required output directory")
 	cmd.Flags().Int64Var(&maxSize, "max-size", 0, "maximum attachment bytes (0 means no extra limit)")
+	cmd.Flags().BoolVar(&imageExtension, "image-extension", false, "append a missing or mismatched JPEG, PNG, GIF, or WebP extension based on the attachment bytes")
 	_ = cmd.MarkFlagRequired("output")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := policy.RequireMutationAllowed(); err != nil {
@@ -389,7 +392,7 @@ func newAttachmentDownloadCommand(rt *Runtime) *cobra.Command {
 			if maxSize > 0 && attachment.Size > maxSize {
 				return &errmap.Error{Kind: errmap.PolicyDenied, Message: fmt.Sprintf("附件 %d 超过 --max-size", attachment.Index)}
 			}
-			filename := safeio.SanitizeFilename(attachment.Filename, fmt.Sprintf("attachment-%d", attachment.Index))
+			filename := attachmentDownloadFilename(attachment, imageExtension)
 			path, err := safeio.UniquePath(outputDir, filename)
 			if err != nil {
 				return err
@@ -417,6 +420,23 @@ func newAttachmentDownloadCommand(rt *Runtime) *cobra.Command {
 		return nil
 	}
 	return cmd
+}
+
+func attachmentDownloadFilename(attachment mailmodel.Attachment, imageExtension bool) string {
+	fallback := fmt.Sprintf("attachment-%d", attachment.Index)
+	if imageExtension {
+		switch http.DetectContentType(attachment.Data) {
+		case "image/jpeg":
+			return safeio.SanitizeFilenameWithExtension(attachment.Filename, fallback, ".jpg", ".jpeg")
+		case "image/png":
+			return safeio.SanitizeFilenameWithExtension(attachment.Filename, fallback, ".png")
+		case "image/gif":
+			return safeio.SanitizeFilenameWithExtension(attachment.Filename, fallback, ".gif")
+		case "image/webp":
+			return safeio.SanitizeFilenameWithExtension(attachment.Filename, fallback, ".webp")
+		}
+	}
+	return safeio.SanitizeFilename(attachment.Filename, fallback)
 }
 
 // bodyText renders the JSON body value for human output. A message without a
