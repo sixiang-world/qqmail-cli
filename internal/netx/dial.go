@@ -24,6 +24,24 @@ type Resolver interface {
 	LookupIPAddr(ctx context.Context, host string) ([]net.IPAddr, error)
 }
 
+const (
+	StageStatusPass    = "pass"
+	StageStatusFail    = "fail"
+	StageStatusSkipped = "skipped"
+)
+
+// StageReport captures structured, credential-free timing and status for a
+// single network or protocol diagnostic stage.
+type StageReport struct {
+	Stage         string `json:"stage"`
+	Status        string `json:"status"`
+	DurationMS    int64  `json:"duration_ms"`
+	Endpoint      string `json:"endpoint,omitempty"`
+	Transport     string `json:"transport,omitempty"`
+	ErrorCategory string `json:"error_category,omitempty"`
+	Detail        string `json:"detail,omitempty"`
+}
+
 // ConnectionInfo captures structured, credential-free connection telemetry.
 type ConnectionInfo struct {
 	Protocol     string   `json:"protocol,omitempty"`

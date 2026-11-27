@@ -49,6 +49,8 @@ type Runtime struct {
 	AuditRead    func(string, int) ([]index.AuditEntry, error)
 	SendMail     policy.MailTransport
 	VerifySMTP   func(context.Context, account.Named, string) (sendmail.VerifyResult, error)
+	ProbeIMAP    func(context.Context, account.Named, string, imapx.ProbeOptions) (imapx.ProbeResult, error)
+	ProbeSMTP    func(context.Context, account.Named, string, sendmail.ProbeOptions) (sendmail.ProbeResult, error)
 	IsTerminal   func(io.Reader) bool
 	started      time.Time
 	current      string
@@ -135,6 +137,9 @@ func NewRoot(rt *Runtime) *cobra.Command {
 	}
 	if rt.VerifySMTP == nil {
 		rt.VerifySMTP = sendmail.Verify
+	}
+	if rt.ProbeSMTP == nil {
+		rt.ProbeSMTP = sendmail.Probe
 	}
 	if rt.DialMutator == nil {
 		rt.DialMutator = func(ctx context.Context, cfg account.Named, authCode string) (imapx.Mutator, error) {
