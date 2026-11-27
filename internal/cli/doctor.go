@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/situker/qqmail-cli/internal/errmap"
+	"github.com/situker/qqmail-cli/internal/imapx"
 	"github.com/situker/qqmail-cli/internal/output"
 	"github.com/situker/qqmail-cli/internal/policy"
 	"github.com/situker/qqmail-cli/internal/secrets"
@@ -28,7 +30,7 @@ func newDoctorCommand(rt *Runtime) *cobra.Command {
 		start := time.Now()
 		_, _, named, err := rt.loadAccount()
 		if err != nil {
-			return err
+			return doctorFailure(err, "config")
 		}
 		checks = append(checks, doctorCheck{Name: "config", Status: "pass", DurationMS: time.Since(start).Milliseconds(), Detail: named.Name + " <" + named.Email + ">"})
 		start = time.Now()
@@ -38,7 +40,7 @@ func newDoctorCommand(rt *Runtime) *cobra.Command {
 		}
 		authCode, err := provider.Get(named.Email)
 		if err != nil {
-			return err
+			return doctorFailure(err, "credential", "config")
 		}
 		checks = append(checks, doctorCheck{Name: "credential", Status: "pass", DurationMS: time.Since(start).Milliseconds(), Detail: provider.Source()})
 		start = time.Now()
@@ -46,7 +48,9 @@ func newDoctorCommand(rt *Runtime) *cobra.Command {
 		defer cancel()
 		reader, err := rt.Dial(ctx, named, authCode)
 		if err != nil {
-			return err
+			stage, _ := errmap.Classify(err).Context["stage"].(string)
+			completed := append([]string{"config", "credential"}, imapx.CompletedDialStages(stage)...)
+			return doctorFailure(err, stage, completed...)
 		}
 		defer func() { _ = reader.Logout(context.Background()) }()
 		before, after := reader.Capabilities()
@@ -66,7 +70,7 @@ func newDoctorCommand(rt *Runtime) *cobra.Command {
 		rt.notePartial(warnings)
 		return writeResult(rt, cmd, data, func(w io.Writer) error {
 			for _, check := range checks {
-				if _, err := fmt.Fprintf(w, "%-18s %-5s %s\n", check.Name, check.Status, check.Detail); err != nil {
+				if _, err := fmt.Fprintf(w, "%-18s %-5s %s\n", check.Name, check.Status, output.SanitizeLine(check.Detail)); err != nil {
 					return err
 				}
 			}
@@ -77,4 +81,15 @@ func newDoctorCommand(rt *Runtime) *cobra.Command {
 		})
 	}
 	return cmd
+}
+
+func doctorFailure(err error, stage string, completed ...string) error {
+	if completed == nil {
+		completed = []string{}
+	}
+	context := map[string]any{"completed_checks": completed}
+	if stage != "" {
+		context["stage"] = stage
+	}
+	return errmap.Classify(err).WithContext(context)
 }

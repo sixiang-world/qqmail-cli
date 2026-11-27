@@ -306,7 +306,7 @@ Not supported, by design. qqmail-cli's entire value proposition is doing one pro
 
 ## Project status
 
-Source version `0.5.0` ([release](https://github.com/sixiang-world/qqmail-cli/releases/tag/v0.5.0)), covering five stages: the read-only core (v0.1), local indexing with gated cleanup (v0.2), allowlisted sending (v0.3), the v0.4 completion round — server-side keyword search (body match, per the archived dialect probe), envelope `--before/--to`, star/trash/folder management, `--reply-all`, `--body-format html`, `--attach-inline`, and `--save-draft`. As of 2026-10-07, the complete unit and integration suites, static guards, vulnerability scans, the PowerShell 5.1 smoke test, and six-platform builds all pass; timestamped read-only observations against real QQ servers (including the search-dialect verdict and drafts-folder resolution) live in the [compatibility records](docs/compat/README.md). agent-driven auto-sending and draft files shipped in v0.5.0.
+Version `0.6.0` adds server-side search pagination, resumable polling, and an experimental local read-only MCP bridge. It also reserves autosend quota before SMTP submission and reports uncertain delivery as non-retryable. See the [release](https://github.com/sixiang-world/qqmail-cli/releases/tag/v0.6.0), the [changelog](CHANGELOG.md), and the [QQ compatibility records](docs/compat/README.md).
 
 ## Contributing
 

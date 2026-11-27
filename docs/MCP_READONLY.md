@@ -63,7 +63,7 @@ Every tool call uses a known set of CLI arguments, a 50-second execution deadlin
 
 Search queries and message IDs are passed as literal positional arguments after the CLI's `--` separator. A query such as `-invoice`, `--help` or `--` is searched as supplied, while the adapter's folder, limit and pagination options remain separate.
 
-**Limitations:** This is a stdio adapter, **not** a hosted ChatGPT connector or a publicly reachable MCP server. It must run wherever the Agent's supported MCP execution environment can launch local processes. Search pagination requires this branch's updated CLI. No background mailbox watcher or guaranteed push notification is included. For production use, test with a dedicated mailbox and review access restrictions.
+**Limitations:** This is a stdio adapter, **not** a hosted ChatGPT connector or a publicly reachable MCP server. It must run wherever the Agent's supported MCP execution environment can launch local processes. Use the CLI from the same release or checkout as the adapter. The release archives contain the CLI, and the experimental adapter is built from source. No background mailbox watcher or guaranteed push notification is included. For production use, test with a dedicated mailbox and review access restrictions.
 
 ## Safety and reliability
 

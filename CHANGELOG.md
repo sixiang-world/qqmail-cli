@@ -4,6 +4,20 @@ All notable development changes are recorded here. Formal releases remain owner-
 
 ## Unreleased
 
+### Added (2026-11-23 connection diagnostics)
+
+- Report the failing connection stage in `error.context.stage` and the names
+  of completed checks in `doctor --json` failures. A transport timeout or
+  disconnect while waiting for an IMAP command is reported as `network`.
+
+### Added (2026-11-23 attachment download)
+
+- `attachment download --image-extension` optionally appends a JPEG, PNG,
+  GIF, or WebP extension based on the attachment bytes when the existing
+  filename lacks a matching extension.
+
+## 0.6.0 — 2026-11-23
+
 ### Fixed (2026-11-23 review follow-up)
 
 - Reject autosend state with a missing or null `count`, including older
@@ -23,12 +37,6 @@ All notable development changes are recorded here. Formal releases remain owner-
   resume from these values, including `last_uid: 0` for an empty folder.
 - Wait for the IMAP server greeting before sending the first command, with
   the existing deadline and cancellation watchdog protecting the wait.
-
-### Added (2026-11-23 attachment download)
-
-- `attachment download --image-extension` optionally appends a JPEG, PNG,
-  GIF, or WebP extension based on the attachment bytes when the existing
-  filename lacks a matching extension.
 
 ### Added (2026-11-19 agent-bridge round)
 
