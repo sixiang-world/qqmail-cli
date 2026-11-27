@@ -4,6 +4,24 @@ All notable development changes are recorded here. Formal releases remain owner-
 
 ## Unreleased
 
+### Security (2026-11-27 release hardening)
+
+- Refuse to rewrite `config.toml` (`Config.Save`, `account use`, `auth login`,
+  `auth logout`) when the loaded configuration contains unrecognized TOML keys
+  (exit 3 `config` with `error.context.unknown_keys`), preventing config
+  rewrites from silently stripping misspelled policy keys such as
+  `send_blaklist` and bypassing `auto_send` fail-closed protection.
+- Distinguish uncertain credential-store timeouts (`outcome_uncertain: true`,
+  `credential_save_state: "uncertain"` / `local_credential_deleted_state:
+  "uncertain"`) from confirmed failures on `Set`/`Delete` because platform
+  keyring APIs exposed by `go-keyring` cannot be canceled once invoked; give
+  `auth keyring-test` a unique per-invocation non-email probe account to avoid
+  concurrent collisions and surface `cleanup_status` accurately.
+- Route production `doctor` (both authenticated and `--no-auth`) consistently
+  through single-pass `imapx.Probe` instead of the retrying business `Dial`
+  path, and label unauthenticated probes `tls_probe` with `authenticated: false`
+  so `--no-auth` is never mistaken for verified authentication.
+
 ### Documentation (2026-11-27 cloud VM and Muse deployment — R06)
 
 - Add `docs/CLOUD_DEPLOYMENT.md` covering supported network authorization,

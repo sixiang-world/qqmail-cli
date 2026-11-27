@@ -5,7 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"path/filepath"
+	"strconv"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -164,26 +168,26 @@ func TestDoctorSMTPFailureReportsStageCompletedChecksAndNoSecret(t *testing.T) {
 		Dial: func(context.Context, account.Named, string) (imapx.Reader, error) { return fakeReader{}, nil },
 		ProbeSMTP: func(context.Context, account.Named, string, sendmail.ProbeOptions) (sendmail.ProbeResult, error) {
 			return sendmail.ProbeResult{
-					AuthMode:  "authenticated",
-					Server:    "smtp.qq.com:465",
-					Endpoint:  "127.0.0.1:465",
-					Transport: "implicit_tls",
-					Stages: []netx.StageReport{
-						{Stage: sendmail.StageDNS, Status: netx.StageStatusPass, DurationMS: 1},
-						{Stage: sendmail.StageTCP, Status: netx.StageStatusPass, DurationMS: 2, Endpoint: "127.0.0.1:465"},
-						{Stage: sendmail.StageTLS, Status: netx.StageStatusFail, DurationMS: 5, Endpoint: "127.0.0.1:465", ErrorCategory: netx.CategoryTLSCertificate},
-					},
-				}, (&errmap.Error{
-					Kind:    errmap.TLS,
-					Message: "TLS 证书校验失败",
-					Context: map[string]any{
-						"stage":          sendmail.StageTLS,
-						"server":         "smtp.qq.com:465",
-						"endpoint":       "127.0.0.1:465",
-						"transport":      "implicit_tls",
-						"error_category": netx.CategoryTLSCertificate,
-					},
-				}).WithRetryable(false)
+				AuthMode:  "authenticated",
+				Server:    "smtp.qq.com:465",
+				Endpoint:  "127.0.0.1:465",
+				Transport: "implicit_tls",
+				Stages: []netx.StageReport{
+					{Stage: sendmail.StageDNS, Status: netx.StageStatusPass, DurationMS: 1},
+					{Stage: sendmail.StageTCP, Status: netx.StageStatusPass, DurationMS: 2, Endpoint: "127.0.0.1:465"},
+					{Stage: sendmail.StageTLS, Status: netx.StageStatusFail, DurationMS: 5, Endpoint: "127.0.0.1:465", ErrorCategory: netx.CategoryTLSCertificate},
+				},
+			}, (&errmap.Error{
+				Kind:    errmap.TLS,
+				Message: "TLS 证书校验失败",
+				Context: map[string]any{
+					"stage":          sendmail.StageTLS,
+					"server":         "smtp.qq.com:465",
+					"endpoint":       "127.0.0.1:465",
+					"transport":      "implicit_tls",
+					"error_category": netx.CategoryTLSCertificate,
+				},
+			}).WithRetryable(false)
 		},
 	}
 	root := NewRoot(rt)
@@ -219,5 +223,136 @@ func TestDoctorSMTPFailureReportsStageCompletedChecksAndNoSecret(t *testing.T) {
 	}
 	if doc.Error.Context.Stage != sendmail.StageTLS || doc.Error.Context.Protocol != "smtp" || doc.Error.Context.AuthMode != "authenticated" || len(doc.Error.Context.Stages) != 3 {
 		t.Fatalf("unexpected failure context: %+v", doc.Error.Context)
+	}
+}
+
+func TestDoctorProductionDefaultUsesSinglePassIMAPProbe(t *testing.T) {
+	// Start a local listener that immediately drops every TCP connection before
+	// TLS completes (a transient failure that normal business Dial retries 3x).
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var accepts atomic.Int32
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			c, acceptErr := listener.Accept()
+			if acceptErr != nil {
+				return
+			}
+			accepts.Add(1)
+			_ = c.Close()
+		}
+	}()
+	t.Cleanup(func() {
+		_ = listener.Close()
+		wg.Wait()
+	})
+	host, portText, _ := net.SplitHostPort(listener.Addr().String())
+	port, _ := strconv.Atoi(portText)
+
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	cfg := &account.Config{
+		Schema:         account.ConfigSchema,
+		DefaultAccount: "personal",
+		Accounts: map[string]account.Account{
+			"personal": {Email: "user@qq.com", IMAPHost: host, IMAPPort: port},
+		},
+	}
+	if err := cfg.Save(configPath); err != nil {
+		t.Fatal(err)
+	}
+
+	// Production wiring: leave both Dial and ProbeIMAP nil so NewRoot chooses defaults.
+	var out bytes.Buffer
+	rt := &Runtime{
+		Out:     &out,
+		Err:     io.Discard,
+		Timeout: 5 * time.Second,
+		Secrets: &secrets.Memory{Values: map[string]string{"user@qq.com": "abcdefghijklmnop"}},
+	}
+	root := NewRoot(rt)
+	root.SetArgs([]string{"--config", configPath, "--json", "doctor"})
+	err = root.Execute()
+	if err == nil {
+		t.Fatal("expected doctor to fail on dropped TLS handshake")
+	}
+	if accepts.Load() != 1 {
+		t.Fatalf("production authenticated doctor made %d connection attempts; want single-pass 1", accepts.Load())
+	}
+	failure, exitCode := errmap.Details(err)
+	if exitCode != output.ExitNetwork || failure.Context["stage"] != "tls" || failure.Context["protocol"] != "imap" || failure.Context["auth_mode"] != "authenticated" {
+		t.Fatalf("unexpected doctor failure: exit=%d failure=%+v", exitCode, failure)
+	}
+	if err := output.WriteJSON(&out, output.Failure(rt.current, failure, time.Now())); err != nil {
+		t.Fatal(err)
+	}
+	validateOutput(t, "doctor.schema.json", out.Bytes())
+}
+
+func TestDoctorUnauthenticatedProbeNeverClaimsLoginPassed(t *testing.T) {
+	missingConfig := filepath.Join(t.TempDir(), "missing.toml")
+	var out bytes.Buffer
+	rt := &Runtime{
+		Out: &out, Err: io.Discard,
+		ProbeIMAP: func(_ context.Context, _ account.Named, code string, opts imapx.ProbeOptions) (imapx.ProbeResult, error) {
+			if !opts.NoAuth || code != "" {
+				t.Fatalf("expected unauthenticated probe with empty secret")
+			}
+			return imapx.ProbeResult{
+				AuthMode:                "unauthenticated",
+				Server:                  "imap.qq.com:993",
+				Endpoint:                "127.0.0.1:993",
+				Transport:               "implicit_tls",
+				DurationMS:              5,
+				CapabilitiesBeforeLogin: []string{"IMAP4rev1"},
+				CapabilitiesAfterLogin:  []string{},
+				Stages: []netx.StageReport{
+					{Stage: netx.StageDNS, Status: netx.StageStatusPass, DurationMS: 1},
+					{Stage: netx.StageTCP, Status: netx.StageStatusPass, DurationMS: 1},
+					{Stage: netx.StageTLS, Status: netx.StageStatusPass, DurationMS: 2},
+					{Stage: "imap_greeting", Status: netx.StageStatusPass, DurationMS: 1},
+				},
+			}, nil
+		},
+	}
+	root := NewRoot(rt)
+	root.SetArgs([]string{"--config", missingConfig, "--json", "doctor", "--no-auth"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("doctor --no-auth failed: %v", err)
+	}
+	validateOutput(t, "doctor.schema.json", out.Bytes())
+	var doc struct {
+		OK   bool `json:"ok"`
+		Data struct {
+			Authenticated bool          `json:"authenticated"`
+			AuthMode      string        `json:"auth_mode"`
+			Checks        []doctorCheck `json:"checks"`
+			IMAP          struct {
+				Authenticated bool `json:"authenticated"`
+				Attempts      int  `json:"attempts"`
+			} `json:"imap"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if !doc.OK || doc.Data.Authenticated || doc.Data.AuthMode != "unauthenticated" || doc.Data.IMAP.Authenticated || doc.Data.IMAP.Attempts != 1 {
+		t.Fatalf("unexpected unauthenticated doctor flags: %+v", doc.Data)
+	}
+	sawProbe := false
+	for _, c := range doc.Data.Checks {
+		if c.Name == "tls_login" {
+			t.Fatalf("unauthenticated doctor must not emit misleading tls_login check: %+v", doc.Data.Checks)
+		}
+		if c.Name == "tls_probe" && c.Status == "pass" {
+			sawProbe = true
+		}
+	}
+	if !sawProbe {
+		t.Fatalf("expected tls_probe check in unauthenticated doctor output: %+v", doc.Data.Checks)
 	}
 }

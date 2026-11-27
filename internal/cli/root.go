@@ -112,10 +112,17 @@ func NewRoot(rt *Runtime) *cobra.Command {
 	if rt.Secrets == nil {
 		rt.Secrets = secrets.Keyring{}
 	}
+	customDial := rt.Dial != nil
 	if rt.Dial == nil {
 		rt.Dial = func(ctx context.Context, cfg account.Named, authCode string) (imapx.Reader, error) {
 			return imapx.DialWithVersion(ctx, cfg, authCode, rt.Build.Version)
 		}
+	}
+	// Production doctor always uses single-pass imapx.Probe (never the retrying
+	// Dial path) so diagnostics do not amplify logins or probes. Tests that
+	// inject a custom rt.Dial without rt.ProbeIMAP keep exercising their mock.
+	if rt.ProbeIMAP == nil && !customDial {
+		rt.ProbeIMAP = imapx.Probe
 	}
 	if rt.IndexOpen == nil {
 		rt.IndexOpen = index.Open
