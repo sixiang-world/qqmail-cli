@@ -10,6 +10,8 @@ All notable development changes are recorded here. Formal releases remain owner-
   of completed checks in `doctor --json` failures. A transport timeout or
   disconnect while waiting for an IMAP command is reported as `network`.
 
+## 0.6.0 — 2026-11-23
+
 ### Fixed (2026-11-23 review follow-up)
 
 - Reject autosend state with a missing or null `count`, including older

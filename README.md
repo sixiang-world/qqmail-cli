@@ -90,6 +90,13 @@ $ qqmail-cli message show "m1_eyJmIjoiSU5CT1giLCJ2IjoxNDI1LCJ1Ijo4MzQ3fQ" \
 - **内嵌图读取闭环** —— `multipart/related` 邮件的 CID 图片可列出、可下载、转发不丢图。
 - **可验证的诚实** —— QQ 搜索方言与草稿箱位置来自只读探针实测（[spikes/imap-dialect-probe](spikes/imap-dialect-probe/)），结论落档 `docs/compat/`；文件夹名编码修正为 RFC 3501 Modified UTF-7 并与 go-imap 序列化器做了差分验证。
 
+### v0.6.0（已发布）
+
+- **可分页服务端搜索** —— `search --server` 返回 UID 游标和 UIDVALIDITY，翻页时可拒绝过期游标。
+- **可恢复的只读轮询** —— `watch --once` 可输出起始检查点，后续调用可从已确认的 UID 继续。
+- **实验性只读 MCP** —— 通过本地 stdio 列文件夹、列信封、读原信、查附件元数据和搜正文。见 [源码构建与配置](docs/MCP_READONLY.md)。
+- **自动发送可靠性** —— 提交 SMTP 前跨进程预占额度，投递结果不确定时返回不可重试的错误。
+
 ### v0.5.0（已发布）
 
 - **Agent 自动发送（autosend）** —— 账号配置 `auto_send = true` 后，allowlist 内的发送由 Agent 直接完成（跳过 TTY 确认）；`send_blacklist` 中的地址永不自动发送（回落完整人工门禁）；`daily_auto_limit` 每日限额（默认 50 封）+ 内容无关审计兜底。**三条线没有松动**：allowlist 之外发不出去、Agent 改不了任何名单、`QQMAIL_CLI_READONLY=1` 仍然一键全停。
@@ -319,7 +326,7 @@ Agent 集成三件套：
 
 ## 项目状态
 
-代码版本 `0.5.0`（[Release](https://github.com/sixiang-world/qqmail-cli/releases/tag/v0.5.0)），覆盖只读内核（v0.1）、本地索引与门禁清理（v0.2）、白名单发送（v0.3）、能力面补全（v0.4）、Agent 自动发送与草稿文件（v0.5）五个阶段的能力面。截至 2026-10-07：全量单元与集成测试、静态守卫、漏洞扫描、PowerShell 5.1 冒烟、六平台构建全部通过；真实 QQ 服务器的只读行为观察（搜索方言定案、草稿箱解析、畸形 MIME 记录）见[兼容性记录](docs/compat/README.md)。Agent 自动发送与草稿文件能力随 v0.5.0 发布（见 [CHANGELOG](CHANGELOG.md) 0.5.0 分节）。
+当前版本为 `0.6.0`（[Release](https://github.com/sixiang-world/qqmail-cli/releases/tag/v0.6.0)）。版本变更见 [CHANGELOG](CHANGELOG.md)，真实 QQ 服务器的脱敏兼容性观察见 [兼容性记录](docs/compat/README.md)。
 
 ## 参与贡献
 
