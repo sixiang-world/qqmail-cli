@@ -57,7 +57,7 @@ Remove-Item Env:QQMAIL_CLI_READONLY -ErrorAction SilentlyContinue
 .\bin\qqmail-cli.exe doctor --smtp-only --no-auth --json
 ```
 
-连接诊断失败时，`doctor --json` 的 `error.context.stage` 标出失败阶段，`error.context.completed_checks` 列出此前完成的阶段名称，`error.context.stages` 记录各阶段耗时与错误类别。IMAP 阶段按顺序为 `config`、`credential`、`dns`、`tcp`、`tls`、`imap_greeting`、`imap_capability_before_login`、`imap_login`、`imap_capability_after_login` 及可选 `imap_id`；加上 `--smtp` 或 `--smtp-only` 后会以单次探测逐阶段检查 SMTP（`smtp_dns`、`smtp_tcp`、`smtp_tls`/`smtp_starttls`、`smtp_greeting`、`smtp_ehlo`、授权模式下的 `smtp_auth`），绝不发信也不进行高频重复探测。加上 `--no-auth` 执行无凭证网络探测（`auth_mode: "unauthenticated"`），未配置账号或凭据异常时也可定位网络阶段故障。
+连接诊断失败时，`doctor --json` 的 `error.context.stage` 标出失败阶段，`error.context.completed_checks` 列出此前完成的阶段名称，`error.context.stages` 记录各阶段耗时与错误类别。默认与无认证 `doctor` 的 IMAP 路径均使用单次探测（不触发业务命令的重试循环），阶段按顺序为 `config`、`credential`、`dns`、`tcp`、`tls`、`imap_greeting`、`imap_capability_before_login`、`imap_login`、`imap_capability_after_login` 及可选 `imap_id`；加上 `--smtp` 或 `--smtp-only` 后会以单次探测逐阶段检查 SMTP（`smtp_dns`、`smtp_tcp`、`smtp_tls`/`smtp_starttls`、`smtp_greeting`、`smtp_ehlo`、授权模式下的 `smtp_auth`），绝不发信也不进行高频重复探测。加上 `--no-auth` 执行无凭证网络探测（`auth_mode: "unauthenticated"`、`authenticated: false`、检查项记为 `tls_probe` 而非 `tls_login`），未配置账号或凭据异常时也可定位网络阶段故障，且绝不代表登录认证成功。
 
 管理多个账号：
 
@@ -76,7 +76,7 @@ Remove-Item Env:QQMAIL_CLI_READONLY -ErrorAction SilentlyContinue
 
 在无头 Linux（如云 VM 或容器）中，`qqmail-cli` 仍通过系统 Secret Service（D-Bus）保存授权码，绝不自动回退到明文文件。当 D-Bus 会话总线缺失、GNOME Keyring 未安装或登录密钥环被锁定时：
 
-- `auth login` 若已通过 IMAP 验证但写入凭据管理器失败，会返回配置错误（退出码 3），并在 `error.context` 中标注 `stage="credential_store"`、`imap_verified=true`、`credential_saved=false`、`config_saved=false` 及分类后的 `reason`（`no_session_bus`、`service_unavailable`、`locked`、`permission_denied`、`timeout`、`unknown`）。此时登录尚未完成，本地账号配置不会写入，修复凭据管理器后需重新运行 `auth login`。
+- `auth login` 若已通过 IMAP 验证但写入凭据管理器失败，会返回配置错误（退出码 3），并在 `error.context` 中标注 `stage="credential_store"`、`imap_verified=true`、`config_saved=false` 及分类后的 `reason`（`no_session_bus`、`service_unavailable`、`locked`、`permission_denied`、`timeout`、`unknown`）。明确失败时标注 `credential_saved=false` / `credential_save_state="failed"`；若写入或 `auth logout` 删除超时（底层跨平台密钥环接口不支持强制取消，后台调用可能稍后完成），则标注 `outcome_uncertain=true`、`credential_save_state="uncertain"`（不再误报 `credential_saved=false`），请先运行 `auth status --json` 或在系统凭据管理器中核对状态后再决定重跑。
 - `auth status --json` 在凭据管理器异常时会保留 `credential_present=false`，同时追加 `credential_store_status="error"`、`credential_store_reason` 与 `credential_store_suggestion`，便于与“尚未登录（`not_found`）”区分。
 - 可在人工终端中（关闭 `QQMAIL_CLI_READONLY` 且不带 `--auth-code-env`）运行显式自检命令验证系统凭据管理器的写、读、比对、删除闭环：
 
@@ -84,7 +84,7 @@ Remove-Item Env:QQMAIL_CLI_READONLY -ErrorAction SilentlyContinue
 qqmail-cli auth keyring-test --json
 ```
 
-`auth keyring-test` 仅在服务名 `qqmail-cli` 下使用固定测试项 `__qqmail-cli-keyring-probe__` 写入随机值、读回比对并尝试删除，不触碰真实账号凭证，也不连接邮件服务器。在 Linux 无头环境下，通常需要安装 `gnome-keyring`、`libsecret-tools` 与 `dbus-user-session`（或 `dbus-x11`），确认存在可用的 D-Bus 会话总线（例如经 `dbus-run-session -- ...` 启动）且登录密钥环已解锁；单次临时调用也可显式搭配 `--auth-code-env` 与 `QQMAIL_CLI_AUTH_CODE`。
+`auth keyring-test` 仅在服务名 `qqmail-cli` 下使用每次调用唯一的非邮箱测试项（`__qqmail-cli-keyring-probe-<随机后缀>`）写入随机值、读回比对并尝试删除，避免并发冲突且不触碰真实账号凭证或邮件服务器。输出同时报告 `cleanup_status`（`cleaned` / `not_needed` / `failed` / `uncertain`）与 `outcome_uncertain`；若超时或清理失败会给出确切测试项名称供人工核对清理。在 Linux 无头环境下，通常需要安装 `gnome-keyring`、`libsecret-tools` 与 `dbus-user-session`（或 `dbus-x11`），确认存在可用的 D-Bus 会话总线（例如经 `dbus-run-session -- ...` 启动）且登录密钥环已解锁；单次临时调用也可显式搭配 `--auth-code-env` 与 `QQMAIL_CLI_AUTH_CODE`。
 
 ## 4. PowerShell 5.1 中文设置
 
@@ -479,7 +479,7 @@ daily_auto_limit = 50            # 每日自动发送上限；缺省或 ≤0 一
 - `auto_send = true` 且黑名单未命中 → 跳过 TTY 确认直接发送；当日自动计数达到 `daily_auto_limit` → `policy_denied`（退出码 50，不可重试），次日自动重置。
 - 发出的邮件、命令输出与人工发送逐字段一致：没有 "auto" 标记、没有新字段、审计不变；本地计数器只是配置目录下的 `autosend-state.json`（日期 + 次数），不进审计也不进输出。
 - 每日计数器是配置目录下的**全局单文件**（不按账号区分），多个账号共享同一每日配额。
-- 若账号配置或顶层存在未识别的未知字段（例如拼错为 `send_blaklist`），开启 `auto_send` 时会自动拒绝无人值守发送（`policy_denied` / 退出码 50，fail closed），避免拼写错误让黑名单静默失效。
+- 若账号配置或顶层存在未识别的未知字段（例如拼错为 `send_blaklist`），开启 `auto_send` 时会自动拒绝无人值守发送（`policy_denied` / 退出码 50，fail closed），并且 `account use`、`auth login`、`auth logout` 也会拒绝重写配置文件（退出码 3，附 `error.context.unknown_keys`），防止重写静默丢弃拼错的安全策略字段。请先运行 `qqmail-cli config validate` 检查并人工修正配置文件。
 
 ### 配置校验与策略审查（config validate / policy / diff）
 

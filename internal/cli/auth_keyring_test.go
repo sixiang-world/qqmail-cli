@@ -154,10 +154,27 @@ func TestAuthLoginDistinguishesIMAPVerifiedFromCredentialSaveFailure(t *testing.
 			}
 			validateOutput(t, "auth.login.schema.json", envBuf.Bytes())
 
-			// Check structured context fields.
+			// Check structured context fields: definite failures assert
+			// credential_saved=false, whereas timeout marks outcome_uncertain=true
+			// without falsely claiming the uncancelable OS write did not happen.
 			ctx := failure.Context
-			if ctx["stage"] != "credential_store" || ctx["imap_verified"] != true || ctx["credential_saved"] != false || ctx["config_saved"] != false {
+			if ctx["stage"] != "credential_store" || ctx["imap_verified"] != true || ctx["config_saved"] != false {
 				t.Fatalf("missing/wrong auth login failure context flags: %+v", ctx)
+			}
+			if tc.reason == secrets.ReasonTimeout {
+				if ctx["outcome_uncertain"] != true || ctx["credential_save_state"] != secrets.OutcomeUncertain {
+					t.Fatalf("timeout must mark outcome_uncertain=true and credential_save_state=uncertain: %+v", ctx)
+				}
+				if _, hasFalse := ctx["credential_saved"]; hasFalse {
+					t.Fatalf("timeout must not assert definite credential_saved=false: %+v", ctx)
+				}
+				if !strings.Contains(failure.Suggestion, "auth status") {
+					t.Fatalf("timeout suggestion should direct status confirmation: %q", failure.Suggestion)
+				}
+			} else {
+				if ctx["credential_saved"] != false || ctx["credential_save_state"] != secrets.OutcomeFailed || ctx["outcome_uncertain"] != false {
+					t.Fatalf("definite failure context wrong: %+v", ctx)
+				}
 			}
 			if ctx["credential_store"] != "keyring" || ctx["reason"] != string(tc.reason) || ctx["platform"] != "linux" || ctx["dbus_session_bus_set"] != tc.dbusSet {
 				t.Fatalf("missing/wrong credential store context: %+v", ctx)
@@ -241,11 +258,8 @@ func TestAuthKeyringTestCommand(t *testing.T) {
 		if provider.lastSetVal == "" {
 			t.Fatal("probe never wrote a value")
 		}
-		if _, left := provider.values[secrets.ProbeAccount]; left {
-			t.Fatal("probe entry was not cleaned up")
-		}
-		if provider.values["user@qq.com"] != "realAuthCode1234" {
-			t.Fatal("real credential was altered")
+		if len(provider.values) != 1 || provider.values["user@qq.com"] != "realAuthCode1234" {
+			t.Fatalf("probe left unexpected entries or altered real credential: %+v", provider.values)
 		}
 		if strings.Contains(out.String(), provider.lastSetVal) || strings.Contains(out.String(), "realAuthCode1234") {
 			t.Fatalf("secret or probe value leaked in JSON output: %s", out.String())
@@ -317,8 +331,8 @@ func TestAuthKeyringTestCommand(t *testing.T) {
 		if provider.deleteCalls != 1 {
 			t.Fatalf("expected cleanup delete call, got %d", provider.deleteCalls)
 		}
-		if _, left := provider.values[secrets.ProbeAccount]; left {
-			t.Fatal("probe value remained after cleanup")
+		if len(provider.values) != 0 {
+			t.Fatalf("probe value remained after cleanup: %+v", provider.values)
 		}
 		var envBuf bytes.Buffer
 		if err := output.WriteJSON(&envBuf, output.Failure(rt.current, failure, time.Now())); err != nil {
@@ -341,17 +355,77 @@ func TestAuthKeyringTestCommand(t *testing.T) {
 			t.Fatal("expected failure")
 		}
 		failure, code := errmap.Details(err)
-		if code != output.ExitConfig || failure.Context["failed_step"] != "delete" || failure.Context["cleanup_ok"] != false {
+		if code != output.ExitConfig || failure.Context["failed_step"] != "delete" || failure.Context["cleanup_ok"] != false || failure.Context["cleanup_status"] != secrets.CleanupStatusFailed {
 			t.Fatalf("unexpected failure context: code=%d ctx=%+v", code, failure.Context)
 		}
-		if !strings.Contains(failure.Message, secrets.ProbeAccount) {
-			t.Fatalf("expected cleanup failure message to identify probe account: %q", failure.Message)
+		probeAcct, _ := failure.Context["probe_account"].(string)
+		if !strings.HasPrefix(probeAcct, secrets.ProbeAccount+"-") || !strings.Contains(failure.Message, probeAcct) {
+			t.Fatalf("expected cleanup failure message to identify unique probe account %q: %q", probeAcct, failure.Message)
 		}
 		var envBuf bytes.Buffer
 		if err := output.WriteJSON(&envBuf, output.Failure(rt.current, failure, time.Now())); err != nil {
 			t.Fatal(err)
 		}
 		validateOutput(t, "auth.keyring-test.schema.json", envBuf.Bytes())
+	})
+
+	t.Run("set timeout reports uncertain cleanup and unique probe account", func(t *testing.T) {
+		t.Setenv(policy.ReadonlyEnv, "0")
+		provider := &stubKeyringProvider{
+			setErr: fakeLinuxKeyringErr(secrets.ReasonTimeout, true, "credential store operation timed out after 15s"),
+		}
+		var out, stderr bytes.Buffer
+		rt := &Runtime{Out: &out, Err: &stderr, In: strings.NewReader(""), Secrets: provider}
+		root := NewRoot(rt)
+		root.SetArgs([]string{"--json", "auth", "keyring-test"})
+		err := root.Execute()
+		if err == nil {
+			t.Fatal("expected failure")
+		}
+		failure, code := errmap.Details(err)
+		if code != output.ExitConfig || failure.Context["cleanup_status"] != secrets.CleanupStatusUncertain || failure.Context["outcome_uncertain"] != true {
+			t.Fatalf("unexpected timeout context: code=%d ctx=%+v", code, failure.Context)
+		}
+		probeAcct, _ := failure.Context["probe_account"].(string)
+		if !strings.HasPrefix(probeAcct, secrets.ProbeAccount+"-") || !strings.Contains(failure.Message, probeAcct) {
+			t.Fatalf("expected timeout message to identify unique probe account %q: %q", probeAcct, failure.Message)
+		}
+		var envBuf bytes.Buffer
+		if err := output.WriteJSON(&envBuf, output.Failure(rt.current, failure, time.Now())); err != nil {
+			t.Fatal(err)
+		}
+		validateOutput(t, "auth.keyring-test.schema.json", envBuf.Bytes())
+	})
+
+	t.Run("auth logout delete timeout reports uncertain state and leaves config untouched", func(t *testing.T) {
+		t.Setenv(policy.ReadonlyEnv, "0")
+		configPath := filepath.Join(t.TempDir(), "config.toml")
+		cfg := &account.Config{
+			Schema:         account.ConfigSchema,
+			DefaultAccount: "personal",
+			Accounts:       map[string]account.Account{"personal": {Email: "user@qq.com"}},
+		}
+		if err := cfg.Save(configPath); err != nil {
+			t.Fatal(err)
+		}
+		provider := &stubKeyringProvider{
+			deleteErr: fakeLinuxKeyringErr(secrets.ReasonTimeout, true, "credential store operation timed out after 15s"),
+		}
+		rt := &Runtime{Out: &bytes.Buffer{}, Err: &bytes.Buffer{}, Secrets: provider}
+		root := NewRoot(rt)
+		root.SetArgs([]string{"--config", configPath, "--json", "auth", "logout", "--name", "personal"})
+		err := root.Execute()
+		if err == nil {
+			t.Fatal("expected logout timeout failure")
+		}
+		failure, code := errmap.Details(err)
+		if code != output.ExitConfig || failure.Context["outcome_uncertain"] != true || failure.Context["local_credential_deleted_state"] != secrets.OutcomeUncertain || failure.Context["config_updated"] != false {
+			t.Fatalf("unexpected logout timeout context: code=%d ctx=%+v", code, failure.Context)
+		}
+		loaded, _, loadErr := account.Load(configPath)
+		if loadErr != nil || loaded.DefaultAccount != "personal" {
+			t.Fatalf("config should remain intact on uncertain logout delete: err=%v cfg=%+v", loadErr, loaded)
+		}
 	})
 
 	t.Run("rejects --auth-code-env cleanly without touching keyring", func(t *testing.T) {

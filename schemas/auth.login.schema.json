@@ -109,6 +109,18 @@
                   "credential_saved": {
                     "type": "boolean"
                   },
+                  "credential_save_state": {
+                    "enum": [
+                      "failed",
+                      "uncertain"
+                    ]
+                  },
+                  "outcome_uncertain": {
+                    "type": "boolean"
+                  },
+                  "credential_cleanup_ok": {
+                    "type": "boolean"
+                  },
                   "config_saved": {
                     "type": "boolean"
                   },

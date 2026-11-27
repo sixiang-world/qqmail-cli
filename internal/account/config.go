@@ -218,9 +218,46 @@ func recordUnknownKeysFromGeneric(cfg *Config, generic map[string]any) {
 	}
 }
 
+// AllUnknownKeys returns the sorted, deduplicated list of unrecognized TOML
+// key paths across the top level and all account tables.
+func (c *Config) AllUnknownKeys() []string {
+	keys := mergeUniqueSorted(nil, c.UnknownKeys)
+	if len(c.Accounts) == 0 {
+		return keys
+	}
+	names := make([]string, 0, len(c.Accounts))
+	for name := range c.Accounts {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		keys = mergeUniqueSorted(keys, c.Accounts[name].UnknownKeys)
+	}
+	return keys
+}
+
+// CheckWritable refuses to rewrite a config loaded with unrecognized TOML keys
+// so security-relevant typos (such as a misspelled send_blacklist) are never
+// silently stripped by Save.
+func (c *Config) CheckWritable() error {
+	keys := c.AllUnknownKeys()
+	if len(keys) == 0 {
+		return nil
+	}
+	return &errmap.Error{
+		Kind:       errmap.Config,
+		Message:    "配置文件包含未知字段，拒绝重写以免静默丢失安全策略字段",
+		Suggestion: "请先运行 qqmail-cli config validate 检查并人工修正或移除未知字段后再重试",
+		Context:    map[string]any{"unknown_keys": keys},
+	}
+}
+
 func (c *Config) Save(path string) error {
 	if path == "" {
 		return &errmap.Error{Kind: errmap.Config, Message: "配置路径为空"}
+	}
+	if err := c.CheckWritable(); err != nil {
+		return err
 	}
 	c.Schema = ConfigSchema
 	raw, err := toml.Marshal(c)

@@ -16,7 +16,24 @@ const (
 	ServiceName           = "qqmail-cli"
 	EnvName               = "QQMAIL_CLI_AUTH_CODE"
 	DefaultKeyringTimeout = 15 * time.Second
+
+	OutcomeSuccess   = "success"
+	OutcomeFailed    = "failed"
+	OutcomeUncertain = "uncertain"
 )
+
+// IsTimeout reports whether err represents a bounded credential store timeout.
+// Because zalando/go-keyring has no context cancellation API, a timed-out
+// mutating operation (Set or Delete) may still complete after the caller gives up.
+func IsTimeout(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, errKeyringTimeout) {
+		return true
+	}
+	return ClassifyKeyringError(err).Reason == ReasonTimeout
+}
 
 type keyringBackend interface {
 	Get(service, user string) (string, error)
@@ -37,6 +54,12 @@ var (
 	keyringTimeout                    = DefaultKeyringTimeout
 )
 
+// callWithTimeout bounds how long the caller waits for a keyring backend call.
+// Platform keyring APIs exposed by zalando/go-keyring do not accept a
+// context.Context and cannot be forcibly canceled; if timeout fires, the
+// underlying call continues in the background goroutine until it finishes or
+// the process exits. Callers of mutating operations (Set/Delete) must treat
+// timeout as an uncertain outcome rather than a confirmed non-write/non-delete.
 func callWithTimeout[T any](timeout time.Duration, fn func() (T, error)) (T, error) {
 	var zero T
 	if timeout <= 0 {
@@ -80,11 +103,15 @@ func (Keyring) Get(account string) (string, error) {
 	}
 	if err != nil {
 		diag := ClassifyKeyringError(err)
+		ctx := diag.Context()
+		ctx["operation"] = "get"
+		ctx["outcome"] = OutcomeFailed
+		ctx["outcome_uncertain"] = false
 		return "", &errmap.Error{
 			Kind:       errmap.Config,
 			Message:    keyringErrorMessage("无法访问系统凭据管理器", diag.Reason),
 			Suggestion: diag.Suggestion,
-			Context:    diag.Context(),
+			Context:    ctx,
 			Cause:      err,
 		}
 	}
@@ -100,11 +127,26 @@ func (Keyring) Set(account, code string) error {
 	})
 	if err != nil {
 		diag := ClassifyKeyringError(err)
+		ctx := diag.Context()
+		ctx["operation"] = "set"
+		if errors.Is(err, errKeyringTimeout) || diag.Reason == ReasonTimeout {
+			ctx["outcome"] = OutcomeUncertain
+			ctx["outcome_uncertain"] = true
+			return &errmap.Error{
+				Kind:       errmap.Config,
+				Message:    "写入系统凭据管理器超时，结果不确定（底层平台接口不支持取消，写入可能稍后完成）",
+				Suggestion: diag.Suggestion + "；请先运行 qqmail-cli auth status --json 或在系统凭据管理器中核对写入结果",
+				Context:    ctx,
+				Cause:      err,
+			}
+		}
+		ctx["outcome"] = OutcomeFailed
+		ctx["outcome_uncertain"] = false
 		return &errmap.Error{
 			Kind:       errmap.Config,
 			Message:    keyringErrorMessage("无法写入系统凭据管理器", diag.Reason),
 			Suggestion: diag.Suggestion,
-			Context:    diag.Context(),
+			Context:    ctx,
 			Cause:      err,
 		}
 	}
@@ -121,11 +163,26 @@ func (Keyring) Delete(account string) error {
 	}
 	if err != nil {
 		diag := ClassifyKeyringError(err)
+		ctx := diag.Context()
+		ctx["operation"] = "delete"
+		if errors.Is(err, errKeyringTimeout) || diag.Reason == ReasonTimeout {
+			ctx["outcome"] = OutcomeUncertain
+			ctx["outcome_uncertain"] = true
+			return &errmap.Error{
+				Kind:       errmap.Config,
+				Message:    "删除系统凭据超时，结果不确定（底层平台接口不支持取消，删除可能稍后完成）",
+				Suggestion: diag.Suggestion + "；请运行 qqmail-cli auth status --json 或在系统凭据管理器中确认凭据是否已移除",
+				Context:    ctx,
+				Cause:      err,
+			}
+		}
+		ctx["outcome"] = OutcomeFailed
+		ctx["outcome_uncertain"] = false
 		return &errmap.Error{
 			Kind:       errmap.Config,
 			Message:    keyringErrorMessage("无法删除系统凭据", diag.Reason),
 			Suggestion: diag.Suggestion,
-			Context:    diag.Context(),
+			Context:    ctx,
 			Cause:      err,
 		}
 	}

@@ -413,61 +413,105 @@ func TestKeyringGetSetDeleteSemanticsAndTimeout(t *testing.T) {
 		}
 	})
 
-	t.Run("hanging call times out with reason timeout", func(t *testing.T) {
+	t.Run("hanging Set times out as uncertain and late completion mutates store safely", func(t *testing.T) {
 		withTestSeams(t, "linux", map[string]string{"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"}, map[string]error{"/run/user/1000/bus": nil}, 1000)
 		unblock := make(chan struct{})
 		done := make(chan struct{})
-		t.Cleanup(func() {
-			close(unblock)
-			<-done
-		})
-		keyringBackendImpl = &fakeKeyringBackend{blockCh: unblock, doneCh: done}
+		backend := &fakeKeyringBackend{blockCh: unblock, doneCh: done}
+		keyringBackendImpl = backend
 		keyringTimeout = 40 * time.Millisecond
 
 		start := time.Now()
 		err := (Keyring{}).Set("user@qq.com", "ab12cd34ef56gh78")
 		if time.Since(start) > 2*time.Second {
-			t.Fatalf("keyring call did not respect timeout")
+			t.Fatalf("keyring Set did not respect timeout")
 		}
 		failure, code := errmap.Details(err)
 		if failure.Code != string(errmap.Config) || code != output.ExitConfig {
 			t.Fatalf("got code=%s exit=%d, want config/%d", failure.Code, code, output.ExitConfig)
 		}
-		if failure.Context["reason"] != string(ReasonTimeout) {
-			t.Fatalf("reason=%v, want timeout", failure.Context["reason"])
+		if failure.Context["reason"] != string(ReasonTimeout) || failure.Context["outcome"] != OutcomeUncertain || failure.Context["outcome_uncertain"] != true || failure.Context["operation"] != "set" {
+			t.Fatalf("expected uncertain timeout context on Set, got %+v", failure.Context)
+		}
+		if !IsTimeout(err) {
+			t.Fatal("IsTimeout returned false for Set timeout")
+		}
+		// Unblock the underlying OS call after caller timeout to verify late
+		// completion actually occurs without a data race (justifying uncertain status).
+		close(unblock)
+		<-done
+		backend.mu.Lock()
+		lateVal := backend.values[ServiceName+":user@qq.com"]
+		backend.mu.Unlock()
+		if lateVal != "ab12cd34ef56gh78" {
+			t.Fatalf("expected late-completing Set to write value, got %q", lateVal)
+		}
+	})
+
+	t.Run("hanging Delete times out as uncertain and late completion removes entry", func(t *testing.T) {
+		withTestSeams(t, "linux", map[string]string{"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"}, map[string]error{"/run/user/1000/bus": nil}, 1000)
+		unblock := make(chan struct{})
+		done := make(chan struct{})
+		backend := &fakeKeyringBackend{
+			values:  map[string]string{ServiceName + ":user@qq.com": "ab12cd34ef56gh78"},
+			blockCh: unblock,
+			doneCh:  done,
+		}
+		keyringBackendImpl = backend
+		keyringTimeout = 40 * time.Millisecond
+
+		err := (Keyring{}).Delete("user@qq.com")
+		failure, code := errmap.Details(err)
+		if failure.Code != string(errmap.Config) || code != output.ExitConfig {
+			t.Fatalf("got code=%s exit=%d, want config/%d", failure.Code, code, output.ExitConfig)
+		}
+		if failure.Context["reason"] != string(ReasonTimeout) || failure.Context["outcome"] != OutcomeUncertain || failure.Context["outcome_uncertain"] != true || failure.Context["operation"] != "delete" {
+			t.Fatalf("expected uncertain timeout context on Delete, got %+v", failure.Context)
+		}
+		close(unblock)
+		<-done
+		backend.mu.Lock()
+		_, stillThere := backend.values[ServiceName+":user@qq.com"]
+		backend.mu.Unlock()
+		if stillThere {
+			t.Fatal("expected late-completing Delete to remove entry")
 		}
 	})
 }
 
 func TestProbeKeyringLifecycle(t *testing.T) {
-	t.Run("round trip succeeds and cleans up without leaking probe value", func(t *testing.T) {
+	t.Run("round trip succeeds with unique probe account and cleans up without leaking probe value", func(t *testing.T) {
 		withTestSeams(t, "linux", map[string]string{"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"}, map[string]error{"/run/user/1000/bus": nil}, 1000)
-		var captured string
+		var capturedUser, capturedPass string
 		backend := &fakeKeyringBackend{values: map[string]string{ServiceName + ":real@qq.com": "real16charscode1"}}
 		keyringBackendImpl = &captureBackend{inner: backend, onSet: func(_, user, pass string) {
-			if user != ProbeAccount {
+			if !strings.HasPrefix(user, ProbeAccount+"-") || strings.Contains(user, "@") {
 				t.Errorf("probe wrote unexpected account %q", user)
 			}
-			captured = pass
+			capturedUser = user
+			capturedPass = pass
 		}}
 		res := ProbeKeyring(Keyring{})
-		if !res.OK || !res.CleanupAttempted || !res.CleanupOK {
+		if !res.OK || !res.CleanupAttempted || !res.CleanupOK || res.CleanupStatus != CleanupStatusCleaned || res.OutcomeUncertain {
 			t.Fatalf("expected clean pass, got %+v", res)
+		}
+		if res.ProbeAccount != capturedUser {
+			t.Fatalf("ProbeAccount=%q, wrote %q", res.ProbeAccount, capturedUser)
 		}
 		if res.Steps.Set.Status != "pass" || res.Steps.Get.Status != "pass" || res.Steps.Compare.Status != "pass" || res.Steps.Delete.Status != "pass" {
 			t.Fatalf("unexpected step statuses: %+v", res.Steps)
 		}
-		if captured == "" {
+		if capturedPass == "" {
 			t.Fatal("probe did not write a value")
 		}
-		if _, left := backend.values[ServiceName+":"+ProbeAccount]; left {
+		if _, left := backend.values[ServiceName+":"+capturedUser]; left {
 			t.Fatal("probe entry was not deleted")
 		}
 		if backend.values[ServiceName+":real@qq.com"] != "real16charscode1" {
 			t.Fatal("real credential was disturbed by probe")
 		}
 		raw, _ := json.Marshal(res)
-		if strings.Contains(string(raw), captured) || strings.Contains(string(raw), "real16charscode1") {
+		if strings.Contains(string(raw), capturedPass) || strings.Contains(string(raw), "real16charscode1") {
 			t.Fatalf("probe or real secret leaked into ProbeResult JSON: %s", raw)
 		}
 	})
@@ -483,11 +527,11 @@ func TestProbeKeyringLifecycle(t *testing.T) {
 		if res.Steps.Set.Status != "pass" || res.Steps.Get.Status != "fail" || res.Steps.Compare.Status != "skipped" || res.Steps.Delete.Status != "pass" {
 			t.Fatalf("unexpected steps: %+v", res.Steps)
 		}
-		if !res.CleanupAttempted || !res.CleanupOK {
+		if !res.CleanupAttempted || !res.CleanupOK || res.CleanupStatus != CleanupStatusCleaned {
 			t.Fatalf("expected cleanup to succeed after get failure: %+v", res)
 		}
-		if _, left := backend.values[ServiceName+":"+ProbeAccount]; left {
-			t.Fatal("probe entry left behind after get failure")
+		if len(backend.values) != 0 {
+			t.Fatalf("probe entry left behind after get failure: %+v", backend.values)
 		}
 	})
 
@@ -496,12 +540,64 @@ func TestProbeKeyringLifecycle(t *testing.T) {
 		backend := &fakeKeyringBackend{}
 		keyringBackendImpl = &tamperGetBackend{inner: backend, returned: "tampered-probe-val"}
 		res := ProbeKeyring(Keyring{})
-		if res.OK || res.FailedStep != "compare" || !res.CleanupOK {
+		if res.OK || res.FailedStep != "compare" || !res.CleanupOK || res.CleanupStatus != CleanupStatusCleaned {
 			t.Fatalf("expected compare failure with cleanup_ok=true, got %+v", res)
 		}
 		raw, _ := json.Marshal(res)
 		if strings.Contains(string(raw), "tampered-probe-val") {
 			t.Fatalf("tampered value leaked into ProbeResult JSON: %s", raw)
+		}
+	})
+
+	t.Run("concurrent probes use distinct accounts without collision", func(t *testing.T) {
+		withTestSeams(t, "linux", map[string]string{"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"}, map[string]error{"/run/user/1000/bus": nil}, 1000)
+		backend := &fakeKeyringBackend{}
+		keyringBackendImpl = backend
+		const workers = 4
+		results := make(chan ProbeResult, workers)
+		for range workers {
+			go func() {
+				results <- ProbeKeyring(Keyring{})
+			}()
+		}
+		seen := map[string]bool{}
+		for range workers {
+			res := <-results
+			if !res.OK || !res.CleanupOK {
+				t.Fatalf("concurrent probe failed: %+v", res)
+			}
+			if seen[res.ProbeAccount] {
+				t.Fatalf("duplicate probe account across concurrent runs: %q", res.ProbeAccount)
+			}
+			seen[res.ProbeAccount] = true
+		}
+		backend.mu.Lock()
+		remaining := len(backend.values)
+		backend.mu.Unlock()
+		if remaining != 0 {
+			t.Fatalf("expected 0 leftover entries after concurrent probes, got %d", remaining)
+		}
+	})
+
+	t.Run("set timeout reports uncertain outcome and cleanup status", func(t *testing.T) {
+		withTestSeams(t, "linux", map[string]string{"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"}, map[string]error{"/run/user/1000/bus": nil}, 1000)
+		unblock := make(chan struct{})
+		done := make(chan struct{})
+		backend := &fakeKeyringBackend{blockCh: unblock, doneCh: done}
+		keyringBackendImpl = backend
+		keyringTimeout = 40 * time.Millisecond
+
+		res := ProbeKeyring(Keyring{})
+		if res.OK || res.FailedStep != "set" || !res.OutcomeUncertain || res.CleanupStatus != CleanupStatusUncertain || res.CleanupOK || res.Steps.Set.Outcome != OutcomeUncertain {
+			t.Fatalf("expected uncertain set timeout result, got %+v", res)
+		}
+		close(unblock)
+		<-done
+		backend.mu.Lock()
+		_, lateWritten := backend.values[ServiceName+":"+res.ProbeAccount]
+		backend.mu.Unlock()
+		if !lateWritten {
+			t.Fatal("expected late-completing set to appear under reported probe account")
 		}
 	})
 }

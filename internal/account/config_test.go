@@ -1,11 +1,15 @@
 package account
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/situker/qqmail-cli/internal/errmap"
+	"github.com/situker/qqmail-cli/internal/output"
 )
 
 func TestConfigRoundTripContainsNoSecret(t *testing.T) {
@@ -131,4 +135,75 @@ func TestAutoSendSettingsParseNormalizeAndDefault(t *testing.T) {
 			t.Fatalf("autosend settings lost across save/load: %+v", named)
 		}
 	})
+}
+
+func TestConfigSaveRefusesToDropUnknownKeys(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+		wantKey string
+	}{
+		{
+			name: "misspelled blacklist under account",
+			content: `schema = 1
+default_account = "personal"
+
+[accounts.personal]
+email = "user@qq.com"
+send_allowlist = ["blocked@example.com"]
+auto_send = true
+send_blaklist = ["blocked@example.com"]
+`,
+			wantKey: "accounts.personal.send_blaklist",
+		},
+		{
+			name: "unknown top-level key",
+			content: `schema = 1
+default_account = "personal"
+unexpected_policy = true
+
+[accounts.personal]
+email = "user@qq.com"
+`,
+			wantKey: "unexpected_policy",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			if err := os.WriteFile(path, []byte(tc.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, _, err := Load(path)
+			if err != nil {
+				t.Fatalf("Load failed: %v", err)
+			}
+			err = cfg.Save(path)
+			if err == nil {
+				t.Fatal("expected Save to refuse rewriting config with unknown keys")
+			}
+			detail, code := errmap.Details(err)
+			if code != output.ExitConfig || detail.Code != string(errmap.Config) {
+				t.Fatalf("got code=%d detail=%+v, want exit 3 config", code, detail)
+			}
+			keys, _ := detail.Context["unknown_keys"].([]string)
+			found := false
+			for _, k := range keys {
+				if k == tc.wantKey {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("expected unknown_keys to contain %q, got %+v", tc.wantKey, detail.Context)
+			}
+			after, readErr := os.ReadFile(path)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if !bytes.Equal(after, []byte(tc.content)) {
+				t.Fatalf("config file was modified despite Save refusal")
+			}
+		})
+	}
 }

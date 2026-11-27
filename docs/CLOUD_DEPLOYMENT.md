@@ -101,10 +101,10 @@ dbus-run-session -- bash -lc '
 
 `auth keyring-test --json` 会：
 
-- 仅使用不会与真实邮箱冲突的固定探针项 `__qqmail-cli-keyring-probe__` 与随机值执行 `set -> get -> compare -> delete` 闭环；
+- 仅使用不会与真实邮箱冲突、且每次调用唯一的随机探针项 `__qqmail-cli-keyring-probe__-<hex>` 与随机值执行 `set -> get -> compare -> delete` 闭环，避免并发测试或延迟写入冲突；
 - 绝不触碰真实账号授权码，也不连接邮件服务器；
 - 在 `QQMAIL_CLI_READONLY=1` 下被拒绝（退出码 `50`），因此须由人工在非只读终端运行；
-- 失败时返回明确分类 `reason`（`no_session_bus`、`service_unavailable`、`locked`、`permission_denied`、`timeout`、`unknown`）与对应修复建议。
+- 失败时返回明确分类 `reason`（`no_session_bus`、`service_unavailable`、`locked`、`permission_denied`、`timeout`、`unknown`）、`cleanup_status`（`cleaned`/`not_needed`/`failed`/`uncertain`）与对应修复建议；因 `go-keyring` 底层平台接口不支持取消，`set`/`delete` 超时时明确标记 `outcome_uncertain: true`（不伪称一定未写入或已删除）。
 
 ### 4.3 临时单次调用备选：`--auth-code-env`
 

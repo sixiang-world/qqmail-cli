@@ -73,6 +73,9 @@
               "readonly": {
                 "type": "boolean"
               },
+              "authenticated": {
+                "type": "boolean"
+              },
               "auth_mode": {
                 "type": "string",
                 "enum": [
@@ -245,12 +248,19 @@
         "ok": {
           "type": "boolean"
         },
+        "authenticated": {
+          "type": "boolean"
+        },
         "auth_mode": {
           "type": "string",
           "enum": [
             "authenticated",
             "unauthenticated"
           ]
+        },
+        "attempts": {
+          "type": "integer",
+          "minimum": 1
         },
         "server": {
           "type": "string"

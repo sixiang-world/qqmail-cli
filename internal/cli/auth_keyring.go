@@ -19,32 +19,79 @@ func authLoginCredentialSaveError(source string, err error) error {
 		kind = errmap.PolicyDenied
 	}
 	diag := secrets.ClassifyKeyringError(err)
+	uncertain := secrets.IsTimeout(err) || diag.Reason == secrets.ReasonTimeout
 	ctx := diag.Context()
 	if source != "" && ctx["credential_store"] == "" {
 		ctx["credential_store"] = source
 	}
 	ctx["stage"] = "credential_store"
 	ctx["imap_verified"] = true
-	ctx["credential_saved"] = false
 	ctx["config_saved"] = false
+	ctx["outcome_uncertain"] = uncertain
+	if uncertain {
+		// Underlying platform keyring APIs cannot be canceled on timeout, so
+		// the write may still finish late; never assert credential_saved=false.
+		ctx["credential_save_state"] = secrets.OutcomeUncertain
+	} else {
+		ctx["credential_saved"] = false
+		ctx["credential_save_state"] = secrets.OutcomeFailed
+	}
 
 	reasonPart := ""
 	if label := diag.Reason.Label(); label != "" {
 		reasonPart = "（" + label + "）"
 	}
-	msg := fmt.Sprintf("授权码已通过 IMAP 验证，但无法写入系统凭据管理器%s；登录尚未完成，账号配置未写入", reasonPart)
+	var msg string
+	if uncertain {
+		msg = fmt.Sprintf("授权码已通过 IMAP 验证，但写入系统凭据管理器超时%s，无法确认凭证是否已保存；登录尚未完成，账号配置未写入", reasonPart)
+	} else {
+		msg = fmt.Sprintf("授权码已通过 IMAP 验证，但无法写入系统凭据管理器%s；登录尚未完成，账号配置未写入", reasonPart)
+	}
 
 	suggestion := diag.Suggestion
 	if suggestion == "" {
 		suggestion = secrets.SuggestionFor(diag.Platform, diag.Reason)
 	}
-	if !strings.Contains(suggestion, "auth login") {
+	if uncertain && !strings.Contains(suggestion, "auth status") {
+		suggestion += "；请先排查密钥环解锁/守护进程状态并核对系统凭据管理器（或运行 qqmail-cli auth status --json），确认后再重新运行 qqmail-cli auth login"
+	} else if !strings.Contains(suggestion, "auth login") {
 		suggestion += "；修复凭据管理器后请重新运行 qqmail-cli auth login"
 	}
 
 	return &errmap.Error{
 		Kind:       kind,
 		Message:    msg,
+		Suggestion: suggestion,
+		Context:    ctx,
+		Cause:      err,
+	}
+}
+
+func authLogoutCredentialDeleteError(source string, err error) error {
+	app := errmap.Classify(err)
+	diag := secrets.ClassifyKeyringError(err)
+	uncertain := secrets.IsTimeout(err) || diag.Reason == secrets.ReasonTimeout
+	if !uncertain {
+		return err
+	}
+	ctx := diag.Context()
+	if source != "" && ctx["credential_store"] == "" {
+		ctx["credential_store"] = source
+	}
+	ctx["stage"] = "credential_store"
+	ctx["local_credential_deleted_state"] = secrets.OutcomeUncertain
+	ctx["outcome_uncertain"] = true
+	ctx["config_updated"] = false
+	suggestion := app.Suggestion
+	if suggestion == "" {
+		suggestion = diag.Suggestion
+	}
+	if !strings.Contains(suggestion, "auth status") {
+		suggestion += "；请先运行 qqmail-cli auth status --json 或在系统凭据管理器中核对凭据是否已移除，再决定是否重试 qqmail-cli auth logout"
+	}
+	return &errmap.Error{
+		Kind:       app.Kind,
+		Message:    "删除系统凭据超时，无法确认本地凭据是否已移除；账号配置尚未修改",
 		Suggestion: suggestion,
 		Context:    ctx,
 		Cause:      err,
@@ -137,6 +184,8 @@ func newAuthKeyringTestCommand(rt *Runtime) *cobra.Command {
 				"steps":             res.Steps,
 				"cleanup_attempted": res.CleanupAttempted,
 				"cleanup_ok":        res.CleanupOK,
+				"cleanup_status":    res.CleanupStatus,
+				"outcome_uncertain": res.OutcomeUncertain,
 			}
 			return writeResult(rt, cmd, data, func(w io.Writer) error {
 				return writeKeyringTestHuman(w, res)
@@ -157,6 +206,8 @@ func newAuthKeyringTestCommand(rt *Runtime) *cobra.Command {
 		ctx["steps"] = res.Steps
 		ctx["cleanup_attempted"] = res.CleanupAttempted
 		ctx["cleanup_ok"] = res.CleanupOK
+		ctx["cleanup_status"] = res.CleanupStatus
+		ctx["outcome_uncertain"] = res.OutcomeUncertain
 		ctx["environment"] = res.Environment
 
 		reasonPart := ""
@@ -164,13 +215,13 @@ func newAuthKeyringTestCommand(rt *Runtime) *cobra.Command {
 			reasonPart = "（" + label + "）"
 		}
 		var cleanupNote string
-		switch {
-		case !res.CleanupAttempted && res.CleanupOK:
+		switch res.CleanupStatus {
+		case secrets.CleanupStatusNotNeeded:
 			cleanupNote = "未写入临时测试项"
-		case !res.CleanupAttempted && !res.CleanupOK:
-			cleanupNote = "写入阶段超时，无法确认临时测试项是否残留在系统凭据管理器中"
-		case res.CleanupOK:
+		case secrets.CleanupStatusCleaned:
 			cleanupNote = "临时测试项已清理"
+		case secrets.CleanupStatusUncertain:
+			cleanupNote = fmt.Sprintf("操作超时且底层平台接口不支持取消，无法确认 %s / %s 是否残留，请人工核对并在必要时手动移除", res.Service, res.ProbeAccount)
 		default:
 			cleanupNote = fmt.Sprintf("临时测试项清理失败，请手动检查并移除 %s / %s", res.Service, res.ProbeAccount)
 		}
@@ -213,12 +264,15 @@ func writeKeyringTestHuman(w io.Writer, res secrets.ProbeResult) error {
 		{"delete", res.Steps.Delete},
 	} {
 		line := fmt.Sprintf("  %-8s %-7s (%dms)", item.name, item.step.Status, item.step.DurationMS)
+		if item.step.Outcome != "" && item.step.Outcome != secrets.OutcomeSuccess {
+			line += " outcome=" + item.step.Outcome
+		}
 		if item.step.Reason != "" {
 			line += " reason=" + string(item.step.Reason)
 		}
 		lines = append(lines, line)
 	}
-	lines = append(lines, fmt.Sprintf("cleanup_attempted=%t cleanup_ok=%t", res.CleanupAttempted, res.CleanupOK))
+	lines = append(lines, fmt.Sprintf("cleanup_attempted=%t cleanup_ok=%t cleanup_status=%s outcome_uncertain=%t", res.CleanupAttempted, res.CleanupOK, res.CleanupStatus, res.OutcomeUncertain))
 	for _, line := range lines {
 		if _, err := fmt.Fprintln(w, output.SanitizeHuman(output.RedactString(line))); err != nil {
 			return err

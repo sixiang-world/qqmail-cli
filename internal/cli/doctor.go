@@ -131,11 +131,17 @@ func newDoctorCommand(rt *Runtime) *cobra.Command {
 				before = nonNilStrings(imapRes.CapabilitiesBeforeLogin)
 				after = nonNilStrings(imapRes.CapabilitiesAfterLogin)
 				completed = append(completed, completedStageNames(imapRes.Stages)...)
+				checkName := "tls_login"
+				checkDetail := doctorEndpointDetail(imapRes.Server, imapRes.Endpoint, imapRes.Transport, authMode)
+				if noAuth {
+					checkName = "tls_probe"
+					checkDetail += " (unauthenticated probe; login not verified)"
+				}
 				checks = append(checks, doctorCheck{
-					Name:       "tls_login",
+					Name:       checkName,
 					Status:     "pass",
 					DurationMS: imapRes.DurationMS,
-					Detail:     doctorEndpointDetail(imapRes.Server, imapRes.Endpoint, imapRes.Transport, authMode),
+					Detail:     checkDetail,
 				})
 				checks = append(checks, doctorCheck{
 					Name:       "capability",
@@ -146,7 +152,9 @@ func newDoctorCommand(rt *Runtime) *cobra.Command {
 				imapSection = map[string]any{
 					"checked":                   true,
 					"ok":                        true,
+					"authenticated":             !noAuth,
 					"auth_mode":                 imapRes.AuthMode,
+					"attempts":                  1,
 					"server":                    imapRes.Server,
 					"endpoint":                  imapRes.Endpoint,
 					"transport":                 imapRes.Transport,
@@ -179,7 +187,9 @@ func newDoctorCommand(rt *Runtime) *cobra.Command {
 				imapSection = map[string]any{
 					"checked":                   true,
 					"ok":                        true,
+					"authenticated":             true,
 					"auth_mode":                 authMode,
+					"attempts":                  1,
 					"server":                    server,
 					"endpoint":                  endpoint,
 					"transport":                 "implicit_tls",
@@ -193,10 +203,11 @@ func newDoctorCommand(rt *Runtime) *cobra.Command {
 			}
 		} else {
 			imapSection = map[string]any{
-				"checked":   false,
-				"ok":        false,
-				"auth_mode": authMode,
-				"server":    named.IMAPHost + ":" + fmt.Sprint(named.IMAPPort),
+				"checked":       false,
+				"ok":            false,
+				"authenticated": false,
+				"auth_mode":     authMode,
+				"server":        named.IMAPHost + ":" + fmt.Sprint(named.IMAPPort),
 			}
 		}
 
@@ -223,11 +234,15 @@ func newDoctorCommand(rt *Runtime) *cobra.Command {
 				}
 				return doctorFailureWithMeta(classified, stage, failedCompleted, extra)
 			}
+			smtpDetail := doctorEndpointDetail(smtpRes.Server, smtpRes.Endpoint, smtpRes.Transport, smtpRes.AuthMode)
+			if noAuth {
+				smtpDetail += " (unauthenticated probe; AUTH not verified)"
+			}
 			checks = append(checks, doctorCheck{
 				Name:       "smtp",
 				Status:     "pass",
 				DurationMS: smtpRes.DurationMS,
-				Detail:     doctorEndpointDetail(smtpRes.Server, smtpRes.Endpoint, smtpRes.Transport, smtpRes.AuthMode),
+				Detail:     smtpDetail,
 			})
 			for _, st := range smtpRes.Stages {
 				checks = append(checks, doctorCheck{
@@ -237,10 +252,16 @@ func newDoctorCommand(rt *Runtime) *cobra.Command {
 					Detail:     doctorStageDetail(st),
 				})
 			}
+			smtpAttempts := 1
+			if smtpRes.FallbackUsed {
+				smtpAttempts = 2
+			}
 			smtpSection = map[string]any{
 				"checked":       true,
 				"ok":            true,
+				"authenticated": !noAuth,
 				"auth_mode":     smtpRes.AuthMode,
+				"attempts":      smtpAttempts,
 				"server":        smtpRes.Server,
 				"endpoint":      smtpRes.Endpoint,
 				"transport":     smtpRes.Transport,
@@ -260,10 +281,11 @@ func newDoctorCommand(rt *Runtime) *cobra.Command {
 			}
 		} else {
 			smtpSection = map[string]any{
-				"checked":   false,
-				"ok":        false,
-				"auth_mode": authMode,
-				"server":    named.SMTPHost + ":" + fmt.Sprint(named.SMTPPort),
+				"checked":       false,
+				"ok":            false,
+				"authenticated": false,
+				"auth_mode":     authMode,
+				"server":        named.SMTPHost + ":" + fmt.Sprint(named.SMTPPort),
 			}
 		}
 
@@ -287,6 +309,7 @@ func newDoctorCommand(rt *Runtime) *cobra.Command {
 			"capabilities_before_login": before,
 			"capabilities_after_login":  after,
 			"readonly":                  policy.Readonly(),
+			"authenticated":             !noAuth,
 			"auth_mode":                 authMode,
 			"credential_store":          credEnv,
 			"imap":                      imapSection,

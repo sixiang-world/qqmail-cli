@@ -56,6 +56,12 @@
               },
               "cleanup_ok": {
                 "type": "boolean"
+              },
+              "cleanup_status": {
+                "$ref": "#/$defs/cleanupStatus"
+              },
+              "outcome_uncertain": {
+                "type": "boolean"
               }
             }
           }
@@ -110,6 +116,12 @@
                   "cleanup_ok": {
                     "type": "boolean"
                   },
+                  "cleanup_status": {
+                    "$ref": "#/$defs/cleanupStatus"
+                  },
+                  "outcome_uncertain": {
+                    "type": "boolean"
+                  },
                   "environment": {
                     "$ref": "#/$defs/environment"
                   }
@@ -122,6 +134,14 @@
     }
   ],
   "$defs": {
+    "cleanupStatus": {
+      "enum": [
+        "cleaned",
+        "not_needed",
+        "failed",
+        "uncertain"
+      ]
+    },
     "reason": {
       "enum": [
         "no_session_bus",
@@ -149,6 +169,13 @@
         "duration_ms": {
           "type": "integer",
           "minimum": 0
+        },
+        "outcome": {
+          "enum": [
+            "success",
+            "failed",
+            "uncertain"
+          ]
         },
         "reason": {
           "$ref": "#/$defs/reason"

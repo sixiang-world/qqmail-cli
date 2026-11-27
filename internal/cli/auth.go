@@ -71,6 +71,9 @@ func newAuthLoginCommand(rt *Runtime) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if err := cfg.CheckWritable(); err != nil {
+			return err
+		}
 		// Re-login must not wipe an existing account's configuration: the send
 		// allowlist and any host overrides survive an authorization-code reset.
 		candidate := account.Account{Email: email}
@@ -133,8 +136,16 @@ func newAuthLoginCommand(rt *Runtime) *cobra.Command {
 			return authLoginCredentialSaveError(rt.Secrets.Source(), err)
 		}
 		if err := cfg.Save(path); err != nil {
-			_ = rt.Secrets.Delete(email)
-			return err
+			delErr := rt.Secrets.Delete(email)
+			extra := map[string]any{
+				"stage":                 "config_save",
+				"config_saved":          false,
+				"credential_cleanup_ok": delErr == nil,
+			}
+			if delErr != nil {
+				extra["outcome_uncertain"] = secrets.IsTimeout(delErr)
+			}
+			return errmap.Classify(err).WithContext(extra)
 		}
 		return writeResult(rt, cmd, data, func(w io.Writer) error {
 			if verifySMTP {
@@ -203,12 +214,15 @@ func newAuthLogoutCommand(rt *Runtime) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if err := cfg.CheckWritable(); err != nil {
+			return err
+		}
 		named, err := cfg.Resolve(name)
 		if err != nil {
 			return err
 		}
 		if err := rt.Secrets.Delete(named.Email); err != nil {
-			return err
+			return authLogoutCredentialDeleteError(rt.Secrets.Source(), err)
 		}
 		cfg.Remove(named.Name)
 		if cfg.DefaultAccount == named.Name {

@@ -12,14 +12,23 @@ import (
 	"github.com/situker/qqmail-cli/internal/output"
 )
 
-// ProbeAccount is a fixed, non-email account identifier used exclusively by
-// `auth keyring-test` so self-tests never collide with real mailbox entries.
+// ProbeAccount is the non-email prefix used exclusively by `auth keyring-test`.
+// Each invocation appends a random suffix so concurrent self-tests or late
+// timed-out writes never collide with each other or with real mailbox entries.
 const ProbeAccount = "__qqmail-cli-keyring-probe__"
+
+const (
+	CleanupStatusCleaned   = "cleaned"
+	CleanupStatusNotNeeded = "not_needed"
+	CleanupStatusFailed    = "failed"
+	CleanupStatusUncertain = "uncertain"
+)
 
 // ProbeStep records the outcome and timing of one keyring self-test step.
 type ProbeStep struct {
 	Status     string `json:"status"`
 	DurationMS int64  `json:"duration_ms"`
+	Outcome    string `json:"outcome,omitempty"`
 	Reason     Reason `json:"reason,omitempty"`
 	Detail     string `json:"detail,omitempty"`
 }
@@ -44,14 +53,17 @@ type ProbeResult struct {
 	Steps            ProbeSteps       `json:"steps"`
 	CleanupAttempted bool             `json:"cleanup_attempted"`
 	CleanupOK        bool             `json:"cleanup_ok"`
+	CleanupStatus    string           `json:"cleanup_status"`
+	OutcomeUncertain bool             `json:"outcome_uncertain"`
 	FailedStep       string           `json:"failed_step,omitempty"`
 	Diagnosis        *Diagnosis       `json:"-"`
 	FailureErr       error            `json:"-"`
 }
 
 // ProbeKeyring executes an explicit, cleanable write/read/compare/delete test
-// against the given Provider using a random probe value under ProbeAccount.
-// It never reads or modifies real account credentials and never contacts the network.
+// against the given Provider using a unique non-email probe account and random
+// probe value. It never reads or modifies real account credentials and never
+// contacts the network.
 func ProbeKeyring(provider Provider) ProbeResult {
 	if provider == nil {
 		provider = Keyring{}
@@ -61,12 +73,17 @@ func ProbeKeyring(provider Provider) ProbeResult {
 	if store == "" {
 		store = "keyring"
 	}
+	probeAccount, acctErr := generateProbeAccount()
+	if acctErr != nil {
+		probeAccount = ProbeAccount
+	}
 	res := ProbeResult{
 		CredentialStore: store,
 		Service:         ServiceName,
-		ProbeAccount:    ProbeAccount,
+		ProbeAccount:    probeAccount,
 		Platform:        env.Platform,
 		Environment:     env,
+		CleanupStatus:   CleanupStatusNotNeeded,
 		Steps: ProbeSteps{
 			Set:     ProbeStep{Status: "skipped"},
 			Get:     ProbeStep{Status: "skipped"},
@@ -85,9 +102,10 @@ func ProbeKeyring(provider Provider) ProbeResult {
 			Suggestion:        SuggestionFor(env.Platform, ReasonUnknown),
 			DBusSessionBusSet: env.DBusSessionBusSet,
 		}
-		res.Steps.Set = ProbeStep{Status: "fail", Reason: diag.Reason, Detail: diag.Observed}
+		res.Steps.Set = ProbeStep{Status: "fail", Outcome: OutcomeFailed, Reason: diag.Reason, Detail: diag.Observed}
 		res.FailedStep = "set"
 		res.CleanupOK = true
+		res.CleanupStatus = CleanupStatusNotNeeded
 		res.Diagnosis = &diag
 		res.FailureErr = err
 		return res
@@ -95,44 +113,66 @@ func ProbeKeyring(provider Provider) ProbeResult {
 	output.RegisterSecret(probeValue)
 
 	start := time.Now()
-	err = provider.Set(ProbeAccount, probeValue)
+	err = provider.Set(probeAccount, probeValue)
 	dur := time.Since(start).Milliseconds()
 	if err != nil {
 		diag := ClassifyKeyringError(err)
 		if diag.CredentialStore == "" {
 			diag.CredentialStore = store
 		}
-		res.Steps.Set = ProbeStep{Status: "fail", DurationMS: dur, Reason: diag.Reason, Detail: diag.Observed}
+		uncertain := IsTimeout(err) || diag.Reason == ReasonTimeout
+		outcome := OutcomeFailed
+		if uncertain {
+			outcome = OutcomeUncertain
+		}
+		res.Steps.Set = ProbeStep{Status: "fail", Outcome: outcome, DurationMS: dur, Reason: diag.Reason, Detail: diag.Observed}
 		res.FailedStep = "set"
 		res.CleanupAttempted = false
-		res.CleanupOK = diag.Reason != ReasonTimeout
+		if uncertain {
+			res.CleanupOK = false
+			res.CleanupStatus = CleanupStatusUncertain
+			res.OutcomeUncertain = true
+		} else {
+			res.CleanupOK = true
+			res.CleanupStatus = CleanupStatusNotNeeded
+		}
 		res.Diagnosis = &diag
 		res.FailureErr = err
 		return res
 	}
-	res.Steps.Set = ProbeStep{Status: "pass", DurationMS: dur}
+	res.Steps.Set = ProbeStep{Status: "pass", Outcome: OutcomeSuccess, DurationMS: dur}
 
 	runCleanup := func() (Diagnosis, error) {
 		res.CleanupAttempted = true
 		delStart := time.Now()
-		delErr := provider.Delete(ProbeAccount)
+		delErr := provider.Delete(probeAccount)
 		delDur := time.Since(delStart).Milliseconds()
 		if delErr != nil {
 			delDiag := ClassifyKeyringError(delErr)
 			if delDiag.CredentialStore == "" {
 				delDiag.CredentialStore = store
 			}
-			res.Steps.Delete = ProbeStep{Status: "fail", DurationMS: delDur, Reason: delDiag.Reason, Detail: delDiag.Observed}
+			uncertain := IsTimeout(delErr) || delDiag.Reason == ReasonTimeout
+			outcome := OutcomeFailed
+			status := CleanupStatusFailed
+			if uncertain {
+				outcome = OutcomeUncertain
+				status = CleanupStatusUncertain
+				res.OutcomeUncertain = true
+			}
+			res.Steps.Delete = ProbeStep{Status: "fail", Outcome: outcome, DurationMS: delDur, Reason: delDiag.Reason, Detail: delDiag.Observed}
 			res.CleanupOK = false
+			res.CleanupStatus = status
 			return delDiag, delErr
 		}
-		res.Steps.Delete = ProbeStep{Status: "pass", DurationMS: delDur}
+		res.Steps.Delete = ProbeStep{Status: "pass", Outcome: OutcomeSuccess, DurationMS: delDur}
 		res.CleanupOK = true
+		res.CleanupStatus = CleanupStatusCleaned
 		return Diagnosis{}, nil
 	}
 
 	start = time.Now()
-	got, err := provider.Get(ProbeAccount)
+	got, err := provider.Get(probeAccount)
 	dur = time.Since(start).Milliseconds()
 	if err != nil {
 		var diag Diagnosis
@@ -151,7 +191,7 @@ func ProbeKeyring(provider Provider) ProbeResult {
 				diag.CredentialStore = store
 			}
 		}
-		res.Steps.Get = ProbeStep{Status: "fail", DurationMS: dur, Reason: diag.Reason, Detail: diag.Observed}
+		res.Steps.Get = ProbeStep{Status: "fail", Outcome: OutcomeFailed, DurationMS: dur, Reason: diag.Reason, Detail: diag.Observed}
 		res.FailedStep = "get"
 		res.Diagnosis = &diag
 		res.FailureErr = err
@@ -159,7 +199,7 @@ func ProbeKeyring(provider Provider) ProbeResult {
 		return res
 	}
 	output.RegisterSecret(got)
-	res.Steps.Get = ProbeStep{Status: "pass", DurationMS: dur}
+	res.Steps.Get = ProbeStep{Status: "pass", Outcome: OutcomeSuccess, DurationMS: dur}
 
 	start = time.Now()
 	matched := subtle.ConstantTimeCompare([]byte(got), []byte(probeValue)) == 1
@@ -173,14 +213,14 @@ func ProbeKeyring(provider Provider) ProbeResult {
 			Suggestion:        SuggestionFor(env.Platform, ReasonUnknown),
 			DBusSessionBusSet: env.DBusSessionBusSet,
 		}
-		res.Steps.Compare = ProbeStep{Status: "fail", DurationMS: dur, Reason: diag.Reason, Detail: diag.Observed}
+		res.Steps.Compare = ProbeStep{Status: "fail", Outcome: OutcomeFailed, DurationMS: dur, Reason: diag.Reason, Detail: diag.Observed}
 		res.FailedStep = "compare"
 		res.Diagnosis = &diag
 		res.FailureErr = errors.New("keyring probe value mismatch")
 		_, _ = runCleanup()
 		return res
 	}
-	res.Steps.Compare = ProbeStep{Status: "pass", DurationMS: dur}
+	res.Steps.Compare = ProbeStep{Status: "pass", Outcome: OutcomeSuccess, DurationMS: dur}
 
 	if delDiag, delErr := runCleanup(); delErr != nil {
 		res.FailedStep = "delete"
@@ -191,6 +231,14 @@ func ProbeKeyring(provider Provider) ProbeResult {
 
 	res.OK = true
 	return res
+}
+
+func generateProbeAccount() (string, error) {
+	buf := make([]byte, 8)
+	if _, err := rand.Read(buf); err != nil {
+		return "", fmt.Errorf("generate probe account suffix: %w", err)
+	}
+	return ProbeAccount + "-" + hex.EncodeToString(buf), nil
 }
 
 func generateProbeValue() (string, error) {
