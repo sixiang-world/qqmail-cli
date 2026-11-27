@@ -1,0 +1,82 @@
+name: Release preflight
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    if: startsWith(github.head_ref, 'release/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Check module metadata (preserve explicit security pins)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp go.mod /tmp/qqmail-go.mod
+          cp go.sum /tmp/qqmail-go.sum
+          # These indirect requirements were intentionally pinned by the
+          # security update e8886f1; tidy may remove unused explicit pins.
+          crypto=$(awk '$1 == "golang.org/x/crypto" && $3 == "//" && $4 == "indirect" {print $2}' go.mod)
+          sync=$(awk '$1 == "golang.org/x/sync" && $3 == "//" && $4 == "indirect" {print $2}' go.mod)
+          test -n "$crypto" && test -n "$sync"
+          go mod tidy
+          filter_mod() {
+            awk -v c="$crypto" -v s="$sync" '(($1=="golang.org/x/crypto" && $2==c) || ($1=="golang.org/x/sync" && $2==s)) && $3=="//" && $4=="indirect" {next} {print}' "$1"
+          }
+          filter_sum() {
+            awk -v c="$crypto" -v s="$sync" '($1=="golang.org/x/crypto" && ($2==c || $2==c"/go.mod")) || ($1=="golang.org/x/sync" && ($2==s || $2==s"/go.mod")) {next} {print}' "$1"
+          }
+          diff -u <(filter_mod /tmp/qqmail-go.mod) <(filter_mod go.mod)
+          diff -u <(filter_sum /tmp/qqmail-go.sum) <(filter_sum go.sum)
+          git restore -- go.mod go.sum
+          git diff --exit-code -- go.mod go.sum
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: check
+      - name: Build snapshot
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: build --snapshot --clean
+      - name: Verify six build targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -r '.[] | select(.type == "Binary") | "\(.goos)/\(.goarch)"' dist/artifacts.json | sort > /tmp/qqmail-targets.txt
+          printf '%s\n' darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64 windows/arm64 | diff - /tmp/qqmail-targets.txt
+  windows-smoke:
+    if: startsWith(github.head_ref, 'release/')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Build CLI and verify Windows PowerShell 5.1 contract
+        shell: powershell
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          go build -o bin/qqmail-cli.exe ./cmd/qqmail-cli
+          if ($LASTEXITCODE -ne 0) { throw "CLI build failed" }
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke-ps51.ps1
+          if ($LASTEXITCODE -ne 0) { throw "PowerShell smoke failed" }
+          $version = (& .\bin\qqmail-cli.exe version --json | ConvertFrom-Json).data.version
+          $plugin = Get-Content .claude-plugin/plugin.json -Raw | ConvertFrom-Json
+          if ($version -ne $plugin.version) { throw "CLI/plugin version mismatch" }
+          if ("release/v$version" -ne $env:GITHUB_HEAD_REF) { throw "CLI version does not match release branch" }

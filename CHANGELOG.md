@@ -4,6 +4,10 @@ All notable development changes are recorded here. Formal releases remain owner-
 
 ## Unreleased
 
+(nothing yet)
+
+## 0.6.1 — 2026-11-27
+
 ### Added (2026-11-23 connection diagnostics)
 
 - Report the failing connection stage in `error.context.stage` and the names
@@ -15,6 +19,11 @@ All notable development changes are recorded here. Formal releases remain owner-
 - `attachment download --image-extension` optionally appends a JPEG, PNG,
   GIF, or WebP extension based on the attachment bytes when the existing
   filename lacks a matching extension.
+
+### Documentation (2026-11-27)
+
+- Add a sanitized Muse cloud VM field report and a proposed development roadmap.
+- Update the user guide and agent skill for connection diagnostics and optional image filename extensions.
 
 ## 0.6.0 — 2026-11-23
 
