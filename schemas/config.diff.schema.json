@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sixiang-world/qqmail-cli/schemas/config.diff.schema.json",
+  "allOf": [
+    {
+      "$ref": "envelope-common.schema.json"
+    },
+    {
+      "properties": {
+        "command": {
+          "const": "config.diff"
+        }
+      },
+      "if": {
+        "properties": {
+          "ok": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "current_path",
+              "proposed_path",
+              "has_changes",
+              "expands_permissions",
+              "changes",
+              "summary",
+              "current_validation",
+              "proposed_validation",
+              "policy_boundary_note"
+            ],
+            "properties": {
+              "current_path": {
+                "type": "string"
+              },
+              "proposed_path": {
+                "type": "string"
+              },
+              "account_filter": {
+                "type": "string"
+              },
+              "has_changes": {
+                "type": "boolean"
+              },
+              "expands_permissions": {
+                "type": "boolean"
+              },
+              "changes": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/policyChange"
+                }
+              },
+              "summary": {
+                "$ref": "#/$defs/diffSummary"
+              },
+              "current_validation": {
+                "$ref": "config.validate.schema.json#/$defs/validationReport"
+              },
+              "proposed_validation": {
+                "$ref": "config.validate.schema.json#/$defs/validationReport"
+              },
+              "policy_boundary_note": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "type": "object",
+            "properties": {
+              "context": {
+                "type": "object",
+                "properties": {
+                  "current_path": {
+                    "type": "string"
+                  },
+                  "proposed_path": {
+                    "type": "string"
+                  },
+                  "current_validation": {
+                    "$ref": "config.validate.schema.json#/$defs/validationReport"
+                  },
+                  "proposed_validation": {
+                    "$ref": "config.validate.schema.json#/$defs/validationReport"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "policyChange": {
+      "type": "object",
+      "required": [
+        "field",
+        "action",
+        "impact",
+        "reason"
+      ],
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "field": {
+          "type": "string",
+          "minLength": 1
+        },
+        "action": {
+          "enum": [
+            "added",
+            "removed",
+            "changed"
+          ]
+        },
+        "impact": {
+          "enum": [
+            "expands",
+            "restricts",
+            "neutral"
+          ]
+        },
+        "before": {},
+        "after": {},
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "diffSummary": {
+      "type": "object",
+      "required": [
+        "total",
+        "expands",
+        "restricts",
+        "neutral"
+      ],
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expands": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "restricts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "neutral": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -72,7 +72,7 @@ func newSchemaCommand(rt *Runtime) *cobra.Command {
 }
 
 func commandCatalog() []agentCommand {
-	read := []string{"version", "agent-info", "schema", "completion", "auth.status", "account.list", "doctor", "folder.list", "envelope.list", "message.show", "attachment.list", "search", "triage.analyze", "watch", "cache.inspect", "audit.list"}
+	read := []string{"version", "agent-info", "schema", "completion", "auth.status", "account.list", "config.validate", "config.policy", "config.diff", "doctor", "folder.list", "envelope.list", "message.show", "attachment.list", "search", "triage.analyze", "watch", "cache.inspect", "audit.list"}
 	mutate := []string{"auth.login", "auth.logout", "account.use", "attachment.download", "export", "sync", "triage.plan", "backup", "message.mark-read", "message.mark-unread", "message.flag", "message.move", "message.trash", "folder.create", "folder.rename", "restore"}
 	destructive := []string{"clean", "cache.clear"}
 	send := []string{"send", "reply", "forward"}

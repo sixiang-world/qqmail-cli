@@ -14,7 +14,27 @@ smtp_port = 465
 send_allowlist = ["you@example.com", "*@your-company.example"]
 ```
 
-省略 SMTP 地址时默认使用 `smtp.qq.com:465`。白名单条目只支持精确邮箱或 `*@domain`；`to`、`cc`、`bcc` 中任何一个地址未命中都会整封拒发，空白名单也拒发。
+省略 SMTP 地址时默认使用 `smtp.qq.com:465`。白名单条目只支持精确邮箱或 `*@domain`；`to`、`cc`、`bcc` 中任何一个地址未命中都会整封拒发，空白名单也拒发。`send_blacklist` 只支持精确邮箱地址（不支持通配符）。
+
+## 配置校验、差异审查与威胁边界
+
+修改配置后，先用只读命令自查再交由人工应用（均不接触密钥环、不联网、不写文件）：
+
+```text
+qqmail-cli config validate --json
+qqmail-cli config policy --json
+qqmail-cli config diff --proposed proposed.toml --json
+```
+
+- `config validate` 对配置执行严格解析，检出语法错误、未知/拼错字段、类型不匹配、无效白名单/黑名单条目与宽泛公共域通配符。
+- `config policy` 展示各账号最终生效的服务器端点、白名单、黑名单、归一化后的 `daily_auto_limit` 以及是否因 `readonly` 或 `unknown_keys` 阻断自动发送。
+- `config diff --proposed <file>` 同时严格校验当前与建议配置，将每项变更分类为 `expands`、`restricts` 或 `neutral`，并给出 `expands_permissions` 汇总，便于人工在手动应用前审阅权限是否扩大。
+- 未知字段 fail closed：普通命令保持宽松读取以维持兼容，但账号配置或顶层存在未知字段（例如拼错为 `send_blaklist`）时，`auto_send` 会直接以 `policy_denied`（退出码 50）拒绝无人值守发送。
+
+**为何不提供白名单 / `auto_send` 的 CLI 写入入口**：
+
+1. 任何可由 Agent 自行附加的 `--confirm` 参数都不是可信的人工授权；写入口必须另行完成威胁建模并保留可信人工授权与审计。
+2. 配置文件位于当前操作系统用户目录下，同一用户进程本就可直接编辑 TOML 文件。因此 CLI 不把该文件描述为不可绕过的操作系统安全边界——这些门禁防止的是误操作、配置拼错与不可信邮件正文诱导（prompt injection），而非对抗已完全失陷的本地用户账号。
 
 ## 先 dry-run，再由人在场执行
 

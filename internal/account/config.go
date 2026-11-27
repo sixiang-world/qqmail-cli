@@ -13,7 +13,18 @@ import (
 	"github.com/situker/qqmail-cli/internal/errmap"
 )
 
-const ConfigSchema = 1
+const (
+	ConfigSchema    = 1
+	DefaultIMAPHost = "imap.qq.com"
+	DefaultIMAPPort = 993
+	DefaultSMTPHost = "smtp.qq.com"
+	DefaultSMTPPort = 465
+
+	// PolicyBoundaryNote documents the honest threat boundary of the TOML config:
+	// the CLI never exposes a write path for send_allowlist, send_blacklist, or
+	// auto_send, yet the same OS user owns and can edit the file directly.
+	PolicyBoundaryNote = "send_allowlist、send_blacklist 与 auto_send 没有 CLI 写入入口，需由人工编辑配置文件；但同一操作系统用户可直接修改该 TOML 文件，因此这些门禁用于防误操作和防不可信邮件内容诱导，不是不可绕过的操作系统安全边界。"
+)
 
 // DefaultDailyAutoLimit is the per-day autosend cap whenever an account's
 // daily_auto_limit is missing or non-positive — there is no "0 = unlimited"
@@ -22,6 +33,11 @@ const ConfigSchema = 1
 const DefaultDailyAutoLimit = 50
 
 var validName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+
+// ValidAccountName reports whether name conforms to the account alias rules.
+func ValidAccountName(name string) bool {
+	return validName.MatchString(name)
+}
 
 type Account struct {
 	Email         string   `toml:"email" json:"email"`
@@ -36,18 +52,22 @@ type Account struct {
 	AutoSend       bool     `toml:"auto_send,omitempty" json:"auto_send,omitempty"`
 	SendBlacklist  []string `toml:"send_blacklist,omitempty" json:"send_blacklist,omitempty"`
 	DailyAutoLimit int      `toml:"daily_auto_limit,omitempty" json:"daily_auto_limit,omitempty"`
+	// UnknownKeys records unrecognized TOML key paths observed under this
+	// account table during lenient Load so security-sensitive paths (such as
+	// autosend) can fail closed without altering existing JSON/TOML outputs.
+	UnknownKeys []string `toml:"-" json:"-"`
 }
 
 func (a Account) Host() string {
 	if a.IMAPHost == "" {
-		return "imap.qq.com"
+		return DefaultIMAPHost
 	}
 	return a.IMAPHost
 }
 
 func (a Account) Port() int {
 	if a.IMAPPort == 0 {
-		return 993
+		return DefaultIMAPPort
 	}
 	return a.IMAPPort
 }
@@ -57,11 +77,11 @@ func (a Account) Address() string { return fmt.Sprintf("%s:%d", a.Host(), a.Port
 func (a Account) SMTPAddress() string {
 	host := a.SMTPHost
 	if host == "" {
-		host = "smtp.qq.com"
+		host = DefaultSMTPHost
 	}
 	port := a.SMTPPort
 	if port == 0 {
-		port = 465
+		port = DefaultSMTPPort
 	}
 	return fmt.Sprintf("%s:%d", host, port)
 }
@@ -70,6 +90,9 @@ type Config struct {
 	Schema         int                `toml:"schema" json:"schema"`
 	DefaultAccount string             `toml:"default_account" json:"default_account"`
 	Accounts       map[string]Account `toml:"accounts" json:"accounts"`
+	// UnknownKeys records unrecognized top-level TOML key paths observed during
+	// lenient Load (for example a misplaced send_blacklist outside [accounts]).
+	UnknownKeys []string `toml:"-" json:"-"`
 }
 
 type Named struct {
@@ -86,6 +109,10 @@ type Named struct {
 	SendBlacklist  []string `json:"send_blacklist"`
 	DailyAutoLimit int      `json:"daily_auto_limit"`
 	IsDefault      bool     `json:"is_default"`
+	// UnknownKeys combines top-level and account-level unrecognized TOML key
+	// paths loaded from disk. Omitted from JSON so existing command outputs stay
+	// unchanged; autosend checks it to fail closed on typos like send_blaklist.
+	UnknownKeys []string `json:"-"`
 }
 
 func DefaultPath() (string, error) {
@@ -112,7 +139,7 @@ func Load(path string) (*Config, string, error) {
 	if err != nil {
 		return nil, path, &errmap.Error{Kind: errmap.Config, Message: "无法读取配置文件", Cause: err}
 	}
-	if err := toml.Unmarshal(raw, cfg); err != nil {
+	if err := decodeLenientWithUnknowns(raw, cfg); err != nil {
 		return nil, path, &errmap.Error{Kind: errmap.Config, Message: "配置文件格式损坏", Cause: err}
 	}
 	if cfg.Schema != ConfigSchema {
@@ -122,6 +149,73 @@ func Load(path string) (*Config, string, error) {
 		cfg.Accounts = make(map[string]Account)
 	}
 	return cfg, path, nil
+}
+
+func decodeLenientWithUnknowns(raw []byte, cfg *Config) error {
+	if err := toml.Unmarshal(raw, cfg); err != nil {
+		return err
+	}
+	// Detect unknown keys from a generic map decode rather than go-toml's
+	// DisallowUnknownFields(), because go-toml/v2 v2.2.4 panics in
+	// strict.Error/SubsliceOffset when an unknown quoted key contains escape
+	// sequences (e.g. "\u001b").
+	var generic map[string]any
+	if err := toml.Unmarshal(raw, &generic); err == nil {
+		recordUnknownKeysFromGeneric(cfg, generic)
+	}
+	return nil
+}
+
+var (
+	knownTopLevelKeys = map[string]bool{
+		"schema":          true,
+		"default_account": true,
+		"accounts":        true,
+	}
+	knownAccountKeys = map[string]bool{
+		"email":            true,
+		"imap_host":        true,
+		"imap_port":        true,
+		"smtp_host":        true,
+		"smtp_port":        true,
+		"send_allowlist":   true,
+		"auto_send":        true,
+		"send_blacklist":   true,
+		"daily_auto_limit": true,
+	}
+)
+
+func recordUnknownKeysFromGeneric(cfg *Config, generic map[string]any) {
+	if cfg.Accounts == nil {
+		cfg.Accounts = make(map[string]Account)
+	}
+	for _, key := range sortedMapKeys(generic) {
+		if !knownTopLevelKeys[key] {
+			cfg.UnknownKeys = appendUniqueSorted(cfg.UnknownKeys, formatKeyPath([]string{key}))
+			continue
+		}
+		if key != "accounts" {
+			continue
+		}
+		accountsMap, ok := generic[key].(map[string]any)
+		if !ok {
+			continue
+		}
+		for _, acctName := range sortedMapKeys(accountsMap) {
+			acctTable, ok := accountsMap[acctName].(map[string]any)
+			if !ok {
+				continue
+			}
+			for _, field := range sortedMapKeys(acctTable) {
+				if knownAccountKeys[field] {
+					continue
+				}
+				acct := cfg.Accounts[acctName]
+				acct.UnknownKeys = appendUniqueSorted(acct.UnknownKeys, formatKeyPath([]string{"accounts", acctName, field}))
+				cfg.Accounts[acctName] = acct
+			}
+		}
+	}
 }
 
 func (c *Config) Save(path string) error {
@@ -205,17 +299,31 @@ func (c *Config) Resolve(name string) (Named, error) {
 	}
 	smtpHost := value.SMTPHost
 	if smtpHost == "" {
-		smtpHost = "smtp.qq.com"
+		smtpHost = DefaultSMTPHost
 	}
 	smtpPort := value.SMTPPort
 	if smtpPort == 0 {
-		smtpPort = 465
+		smtpPort = DefaultSMTPPort
 	}
 	dailyAutoLimit := value.DailyAutoLimit
 	if dailyAutoLimit <= 0 {
 		dailyAutoLimit = DefaultDailyAutoLimit
 	}
-	return Named{Name: name, Email: value.Email, IMAPHost: value.Host(), IMAPPort: value.Port(), SMTPHost: smtpHost, SMTPPort: smtpPort, SendAllowlist: append([]string(nil), value.SendAllowlist...), AutoSend: value.AutoSend, SendBlacklist: append([]string(nil), value.SendBlacklist...), DailyAutoLimit: dailyAutoLimit, IsDefault: name == c.DefaultAccount}, nil
+	unknownKeys := mergeUniqueSorted(c.UnknownKeys, value.UnknownKeys)
+	return Named{
+		Name:           name,
+		Email:          value.Email,
+		IMAPHost:       value.Host(),
+		IMAPPort:       value.Port(),
+		SMTPHost:       smtpHost,
+		SMTPPort:       smtpPort,
+		SendAllowlist:  append([]string(nil), value.SendAllowlist...),
+		AutoSend:       value.AutoSend,
+		SendBlacklist:  append([]string(nil), value.SendBlacklist...),
+		DailyAutoLimit: dailyAutoLimit,
+		IsDefault:      name == c.DefaultAccount,
+		UnknownKeys:    unknownKeys,
+	}, nil
 }
 
 func (c *Config) List() []Named {
