@@ -4,7 +4,11 @@ All notable development changes are recorded here. Formal releases remain owner-
 
 ## Unreleased
 
-(nothing yet)
+### Added (2026-11-23 connection diagnostics)
+
+- Report the failing connection stage in `error.context.stage` and the names
+  of completed checks in `doctor --json` failures. A transport timeout or
+  disconnect while waiting for an IMAP command is reported as `network`.
 
 ## 0.6.0 — 2026-11-23
 

@@ -9,8 +9,10 @@ import (
 	"mime"
 	"net"
 	"net/mail"
+	"slices"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	imap "github.com/emersion/go-imap/v2"
@@ -26,6 +28,25 @@ const (
 	DefaultCommandTimeout = 60 * time.Second
 	MaxMessageBytes       = 64 << 20
 )
+
+const (
+	stageTCP                   = "tcp"
+	stageTLS                   = "tls"
+	stageGreeting              = "imap_greeting"
+	stageCapabilityBeforeLogin = "imap_capability_before_login"
+	stageLogin                 = "imap_login"
+	stageCapabilityAfterLogin  = "imap_capability_after_login"
+	stageID                    = "imap_id"
+)
+
+// CompletedDialStages returns the stages known to have passed before a dial failure.
+func CompletedDialStages(failedStage string) []string {
+	stages := []string{stageTCP, stageTLS, stageGreeting, stageCapabilityBeforeLogin, stageLogin, stageCapabilityAfterLogin, stageID}
+	if index := slices.Index(stages, failedStage); index >= 0 {
+		return stages[:index]
+	}
+	return nil
+}
 
 type SearchFilter struct {
 	Unread              bool
@@ -79,7 +100,7 @@ func dialWithVersion(ctx context.Context, cfg account.Named, authCode string, tl
 	dialer := &net.Dialer{Timeout: DefaultDialTimeout}
 	plain, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(cfg.IMAPHost, fmt.Sprint(cfg.IMAPPort)))
 	if err != nil {
-		return nil, &errmap.Error{Kind: errmap.Network, Message: "无法连接 IMAP 服务器", Context: map[string]any{"server": cfg.IMAPHost + ":" + fmt.Sprint(cfg.IMAPPort)}, Cause: err}
+		return nil, dialStageError(stageTCP, &errmap.Error{Kind: errmap.Network, Message: "无法连接 IMAP 服务器", Context: map[string]any{"server": cfg.IMAPHost + ":" + fmt.Sprint(cfg.IMAPPort)}, Cause: err})
 	}
 	tlsConfig := tlsOverride
 	if tlsConfig == nil {
@@ -99,14 +120,15 @@ func dialWithVersion(ctx context.Context, cfg account.Named, authCode string, tl
 	}
 	if err := tlsConn.HandshakeContext(ctx); err != nil {
 		_ = plain.Close()
-		return nil, &errmap.Error{Kind: errmap.TLS, Message: "TLS 握手或证书校验失败", Suggestion: "检查系统时间、证书链或企业中间人代理", Context: map[string]any{"server": cfg.IMAPHost + ":" + fmt.Sprint(cfg.IMAPPort)}, Cause: err}
+		return nil, dialStageError(stageTLS, &errmap.Error{Kind: errmap.TLS, Message: "TLS 握手或证书校验失败", Suggestion: "检查系统时间、证书链或企业中间人代理", Context: map[string]any{"server": cfg.IMAPHost + ":" + fmt.Sprint(cfg.IMAPPort)}, Cause: err})
 	}
 	client := &Client{conn: tlsConn, commandTimeout: commandTimeout}
-	client.raw = imapclient.New(tlsConn, &imapclient.Options{WordDecoder: &mime.WordDecoder{CharsetReader: charset.Reader}})
+	transport := &imapTransport{Conn: tlsConn}
+	client.raw = imapclient.New(transport, &imapclient.Options{WordDecoder: &mime.WordDecoder{CharsetReader: charset.Reader}})
 
 	if err := client.setDeadline(ctx); err != nil {
 		client.close()
-		return nil, err
+		return nil, dialStageError(stageGreeting, err)
 	}
 	stopBefore := client.watchdog(ctx)
 	// New starts the response reader asynchronously. Wait for the greeting
@@ -114,59 +136,104 @@ func dialWithVersion(ctx context.Context, cfg account.Named, authCode string, tl
 	if err := client.raw.WaitGreeting(); err != nil {
 		stopBefore()
 		client.close()
-		return nil, &errmap.Error{Kind: errmap.Network, Message: "等待 IMAP 服务器欢迎消息失败", Context: map[string]any{"server": cfg.IMAPHost + ":" + fmt.Sprint(cfg.IMAPPort)}, Cause: err}
+		return nil, dialStageError(stageGreeting, &errmap.Error{Kind: errmap.Network, Message: "等待 IMAP 服务器欢迎消息失败", Context: map[string]any{"server": cfg.IMAPHost + ":" + fmt.Sprint(cfg.IMAPPort)}, Cause: err})
 	}
 	before, err := client.raw.Capability().Wait()
 	stopBefore()
 	if err != nil {
+		failure := transport.commandFailure(stageCapabilityBeforeLogin, err)
 		client.close()
-		return nil, err
+		return nil, failure
 	}
 	client.capBefore = capStrings(before)
 
 	if err := client.setDeadline(ctx); err != nil {
 		client.close()
-		return nil, err
+		return nil, dialStageError(stageLogin, err)
 	}
 	stopLogin := client.watchdog(ctx)
 	if err := client.raw.Login(cfg.Email, authCode).Wait(); err != nil {
 		stopLogin()
+		failure := dialStageError(stageLogin, classifyLoginError(err, cfg, transport.interrupted(err)))
 		client.close()
-		return nil, classifyLoginError(err, cfg)
+		return nil, failure
 	}
 	stopLogin()
 
 	if err := client.setDeadline(ctx); err != nil {
 		client.close()
-		return nil, err
+		return nil, dialStageError(stageCapabilityAfterLogin, err)
 	}
 	stopAfter := client.watchdog(ctx)
 	after, err := client.raw.Capability().Wait()
 	stopAfter()
 	if err != nil {
+		failure := transport.commandFailure(stageCapabilityAfterLogin, err)
 		client.close()
-		return nil, err
+		return nil, failure
 	}
 	client.capAfter = capStrings(after)
 	if after.Has(imap.CapID) {
 		if err := client.setDeadline(ctx); err != nil {
 			client.close()
-			return nil, err
+			return nil, dialStageError(stageID, err)
 		}
 		stopID := client.watchdog(ctx)
 		_, err := client.raw.ID(&imap.IDData{Name: "qqmail-cli", Version: version}).Wait()
 		stopID()
 		if err != nil {
+			failure := transport.commandFailure(stageID, fmt.Errorf("IMAP ID failed: %w", err))
 			client.close()
-			return nil, fmt.Errorf("IMAP ID failed: %w", err)
+			return nil, failure
 		}
 	}
 	return client, nil
 }
 
-func classifyLoginError(cause error, cfg account.Named) error {
+func dialStageError(stage string, cause error) *errmap.Error {
+	return errmap.Classify(cause).WithContext(map[string]any{"stage": stage})
+}
+
+// The go-imap decoder can format socket errors with %v, removing their types.
+// Remember transport interruptions at the connection before decoding.
+type imapTransport struct {
+	net.Conn
+	readInterrupted atomic.Bool
+}
+
+func (c *imapTransport) Read(p []byte) (int, error) {
+	n, err := c.Conn.Read(p)
+	if err != nil && isIMAPTransportError(err) {
+		c.readInterrupted.Swap(true)
+	}
+	return n, err
+}
+
+func (c *imapTransport) interrupted(cause error) bool {
+	var status *imap.Error
+	return isIMAPTransportError(cause) || (c.readInterrupted.Load() && !errors.As(cause, &status))
+}
+
+func (c *imapTransport) commandFailure(stage string, cause error) *errmap.Error {
+	failure := errmap.Classify(cause)
+	if failure.Kind != errmap.Network && c.interrupted(cause) {
+		failure = &errmap.Error{
+			Kind: errmap.Network, Message: "IMAP 连接已中断", Cause: cause,
+			Suggestion: "检查网络后重试；若刚刚频繁登录，请等待 10-15 分钟",
+		}
+	}
+	return failure.WithContext(map[string]any{"stage": stage})
+}
+
+func isIMAPTransportError(err error) bool {
 	var networkError net.Error
-	if errors.As(cause, &networkError) || errors.Is(cause, io.EOF) || errors.Is(cause, io.ErrUnexpectedEOF) {
+	return errors.As(err, &networkError) || errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, net.ErrClosed) ||
+		errors.Is(err, io.ErrClosedPipe) || errors.Is(err, context.Canceled)
+}
+
+func classifyLoginError(cause error, cfg account.Named, transportInterrupted bool) error {
+	if transportInterrupted {
 		return &errmap.Error{Kind: errmap.Network, Message: "等待 IMAP 登录响应超时", Suggestion: "停止本次连接；若刚刚频繁登录，请等待 10-15 分钟", Context: map[string]any{"server": cfg.IMAPHost + ":" + fmt.Sprint(cfg.IMAPPort)}, Cause: cause}
 	}
 	message := strings.ToLower(cause.Error())

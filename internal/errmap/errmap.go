@@ -4,6 +4,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"strings"
 
@@ -47,6 +48,15 @@ func (e *Error) Error() string {
 func (e *Error) Unwrap() error { return e.Cause }
 
 func New(kind Kind, message string) *Error { return &Error{Kind: kind, Message: message} }
+
+// WithContext adds structured details without changing the original error.
+func (e *Error) WithContext(values map[string]any) *Error {
+	result := *e
+	result.Context = make(map[string]any, len(e.Context)+len(values))
+	maps.Copy(result.Context, e.Context)
+	maps.Copy(result.Context, values)
+	return &result
+}
 
 func Classify(err error) *Error {
 	if err == nil {
