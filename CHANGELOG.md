@@ -4,7 +4,28 @@ All notable development changes are recorded here. Formal releases remain owner-
 
 ## Unreleased
 
-(nothing yet)
+### Added (2026-11-27 network reliability — R01)
+
+- Add `internal/netx` for staged DNS, TCP, and TLS dialing with normal OS
+  multi-IP failover (preserving logical hostname SNI and strict TLS 1.2+
+  certificate verification without hardcoding server IPs).
+- Add bounded exponential backoff retry (at most 2 extra attempts, 3 total)
+  strictly obeying the overall command deadline for transient pre-auth IMAP
+  and pre-submission SMTP transport failures. Authentication failures, TLS
+  certificate/protocol errors, rate limits, and uncertain SMTP deliveries are
+  never automatically retried.
+- Record credential-free connection telemetry (`meta.connection` with
+  `protocol`, `attempts`, `stage`, `endpoint`, `server`, `transport`, and
+  `fallback_used`) in JSON responses and in `error.context` on failures; expand
+  `doctor.schema.json` with the `dns` stage.
+
+### Fixed (2026-11-27 network reliability — R01)
+
+- Distinguish transient TLS handshake timeouts/disconnects (exit 20 `network`,
+  `stage: "tls"`, retryable before authentication) from TLS certificate and
+  protocol verification failures (exit 21 `tls`, non-retryable).
+- Prevent SMTP 465->587 fallback when port 465 fails with a certificate error,
+  TLS protocol error, or server rate limit.
 
 ## 0.6.1 — 2026-11-27
 

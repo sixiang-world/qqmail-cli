@@ -9,6 +9,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -23,25 +24,37 @@ func greetingTestServer(t *testing.T, serve func(*tls.Conn)) (account.Named, *tl
 	if err != nil {
 		t.Fatal(err)
 	}
-	done := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
-		defer close(done)
-		conn, err := listener.Accept()
-		if err != nil {
-			return
+		defer wg.Done()
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			wg.Add(1)
+			go func(c net.Conn) {
+				defer wg.Done()
+				defer func() { _ = c.Close() }()
+				tlsConn := tls.Server(c, serverTLS)
+				if err := tlsConn.Handshake(); err != nil {
+					return
+				}
+				serve(tlsConn)
+			}(conn)
 		}
-		defer func() { _ = conn.Close() }()
-		tlsConn := tls.Server(conn, serverTLS)
-		if err := tlsConn.Handshake(); err != nil {
-			return
-		}
-		serve(tlsConn)
 	}()
 	t.Cleanup(func() {
 		_ = listener.Close()
+		done := make(chan struct{})
+		go func() {
+			wg.Wait()
+			close(done)
+		}()
 		select {
 		case <-done:
-		case <-time.After(time.Second):
+		case <-time.After(2 * time.Second):
 			t.Error("greeting fixture did not stop")
 		}
 	})
