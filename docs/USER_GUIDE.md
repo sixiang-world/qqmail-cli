@@ -46,6 +46,8 @@ Remove-Item Env:QQMAIL_CLI_READONLY -ErrorAction SilentlyContinue
 .\bin\qqmail-cli.exe auth login --email your-account@qq.com --name personal
 ```
 
+默认登录仅验证 IMAP（不阻碍只读使用）；如需在登录时一并验证 SMTP 认证（不发送邮件），可显式附加 `--verify-smtp`。JSON 输出独立报告 `imap_verified`、`smtp_checked` 与 `smtp_verified`。
+
 验证本地状态和真实连接：
 
 ```powershell

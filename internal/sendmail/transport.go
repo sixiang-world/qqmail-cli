@@ -55,8 +55,116 @@ type dialedSMTP struct {
 	resolvedIPs  []string
 }
 
+type VerifyResult struct {
+	Server       string   `json:"server"`
+	Endpoint     string   `json:"endpoint,omitempty"`
+	Transport    string   `json:"transport"`
+	FallbackUsed bool     `json:"fallback_used"`
+	Attempts     int      `json:"attempts"`
+	Extensions   []string `json:"extensions"`
+	DurationMS   int64    `json:"duration_ms"`
+}
+
+// FallbackAllowed reports whether implicit-TLS 465 -> STARTTLS 587 fallback is
+// permitted for this account configuration. Custom hosts and explicit non-465
+// ports always follow the user's configuration without fallback.
+func FallbackAllowed(named account.Named) bool {
+	return named.SMTPHost == "smtp.qq.com" && named.SMTPPort == 465
+}
+
 func Send(ctx context.Context, named account.Named, authCode string, draft Draft, raw []byte) error {
 	return sendWithOptions(ctx, named, authCode, draft, raw, transportOptions{tlsOverride: tlsOverride})
+}
+
+// Verify connects to SMTP using the same strict TLS and safe fallback rules as
+// Send, authenticates with the authorization code, and issues NOOP/QUIT without
+// sending any message.
+func Verify(ctx context.Context, named account.Named, authCode string) (VerifyResult, error) {
+	return verifyWithOptions(ctx, named, authCode, transportOptions{tlsOverride: tlsOverride})
+}
+
+func verifyWithOptions(ctx context.Context, named account.Named, authCode string, opts transportOptions) (VerifyResult, error) {
+	start := time.Now()
+	dialed, attempts, err := netx.Retry(ctx, opts.retry, func(attemptCtx context.Context, _ int) (*dialedSMTP, error) {
+		return dialAccount(attemptCtx, named, opts)
+	})
+	if err != nil {
+		return VerifyResult{}, err
+	}
+	defer func() { _ = dialed.client.Close() }()
+
+	metaCtx := map[string]any{
+		"server":        dialed.server,
+		"endpoint":      dialed.endpoint,
+		"transport":     dialed.transport,
+		"attempts":      attempts,
+		"fallback_used": dialed.fallbackUsed,
+	}
+
+	if dialed.tlsState == nil {
+		return VerifyResult{}, (&errmap.Error{
+			Kind:       errmap.TLS,
+			Message:    "SMTP 连接未建立有效 TLS 加密，拒绝认证",
+			Suggestion: "检查服务器端口和 TLS 配置；CLI 禁止明文认证",
+			Context:    map[string]any{"stage": StageTLS, "error_category": netx.CategoryTLSProtocol},
+		}).WithRetryable(false).WithContext(metaCtx)
+	}
+	if state, ok := dialed.tlsState(); !ok || !state.HandshakeComplete {
+		return VerifyResult{}, (&errmap.Error{
+			Kind:       errmap.TLS,
+			Message:    "SMTP 连接未建立有效 TLS 加密，拒绝认证",
+			Suggestion: "检查服务器端口和 TLS 配置；CLI 禁止明文认证",
+			Context:    map[string]any{"stage": StageTLS, "error_category": netx.CategoryTLSProtocol},
+		}).WithRetryable(false).WithContext(metaCtx)
+	}
+
+	cmdTimeout := opts.cmdTimeout
+	if cmdTimeout <= 0 {
+		cmdTimeout = 20 * time.Second
+	}
+	dialed.client.CommandTimeout = boundDuration(ctx, cmdTimeout)
+
+	stopWatch := context.AfterFunc(ctx, func() { _ = dialed.conn.Close() })
+	defer stopWatch()
+
+	if err := dialed.client.Auth(sasl.NewPlainClient("", named.Email, authCode)); err != nil {
+		return VerifyResult{}, classifySMTPStage(StageAuth, err, dialed.server, dialed.endpoint, false).WithContext(metaCtx)
+	}
+	extensions := collectExtensions(dialed.client)
+	_ = dialed.client.Noop()
+	_ = dialed.client.Quit()
+
+	res := VerifyResult{
+		Server:       dialed.server,
+		Endpoint:     dialed.endpoint,
+		Transport:    dialed.transport,
+		FallbackUsed: dialed.fallbackUsed,
+		Attempts:     attempts,
+		Extensions:   extensions,
+		DurationMS:   time.Since(start).Milliseconds(),
+	}
+	netx.RecordConnection(ctx, netx.ConnectionInfo{
+		Protocol:     "smtp",
+		Attempts:     attempts,
+		Stage:        "smtp_verified",
+		Endpoint:     dialed.endpoint,
+		Server:       dialed.server,
+		Transport:    dialed.transport,
+		FallbackUsed: dialed.fallbackUsed,
+		ResolvedIPs:  dialed.resolvedIPs,
+	})
+	return res, nil
+}
+
+func collectExtensions(client *smtp.Client) []string {
+	known := []string{"8BITMIME", "AUTH", "ENHANCEDSTATUSCODES", "PIPELINING", "SIZE", "SMTPUTF8", "STARTTLS"}
+	out := make([]string, 0, len(known))
+	for _, name := range known {
+		if ok, _ := client.Extension(name); ok {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 func sendWithOptions(ctx context.Context, named account.Named, authCode string, draft Draft, raw []byte, opts transportOptions) error {
@@ -149,7 +257,7 @@ var tlsOverride *tls.Config
 func dialAccount(ctx context.Context, named account.Named, opts transportOptions) (*dialedSMTP, error) {
 	tlsConfig := netx.StrictTLSConfig(named.SMTPHost, opts.tlsOverride)
 	fallbackPort := opts.fallbackPort
-	if fallbackPort == 0 && named.SMTPHost == "smtp.qq.com" && named.SMTPPort == 465 {
+	if fallbackPort == 0 && FallbackAllowed(named) {
 		fallbackPort = 587
 	}
 	if fallbackPort > 0 {

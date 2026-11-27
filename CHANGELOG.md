@@ -4,6 +4,20 @@ All notable development changes are recorded here. Formal releases remain owner-
 
 ## Unreleased
 
+### Added (2026-11-27 SMTP verification and secure fallback — R02)
+
+- Add opt-in `auth login --verify-smtp` to verify SMTP authentication (via
+  `NOOP`/`QUIT`, never sending mail) while keeping default `auth login`
+  IMAP-only so read-only logins are never blocked by SMTP availability.
+- Report independent `imap_verified`, `smtp_checked`, `smtp_verified`,
+  `smtp_server`, `smtp_endpoint`, `smtp_transport`, `smtp_fallback_used`, and
+  `smtp_extensions` fields additively in `auth.login.schema.json`.
+- Enforce post-STARTTLS TLS handshake completion before any SMTP `AUTH`
+  command, reject servers missing `STARTTLS` with exit 21 (`tls`,
+  `starttls_unsupported`), and restrict 465->587 fallback strictly to default
+  `smtp.qq.com:465` transient pre-auth failures while honoring custom
+  `smtp_host`/`smtp_port` settings.
+
 ### Added (2026-11-27 network reliability — R01)
 
 - Add `internal/netx` for staged DNS, TCP, and TLS dialing with normal OS

@@ -46,7 +46,8 @@ qqmail-cli forward <opaque-id> --to you@example.com --body "转发说明"
 - 中文附件名由标准 MIME 参数编码处理（RFC 2231/兼容形式）。
 - Bcc 只进入 SMTP envelope，不写入 MIME 头。
 - `reply` 设置 `In-Reply-To` 和累积 `References`；`forward` 保留引用链但不伪装成直接回复。
-- QQ 默认优先 465 隐式 TLS；只有连接建立失败才尝试 587 STARTTLS。TLS 最低版本为 1.2。
+- QQ 默认配置（`smtp.qq.com:465`）优先 465 隐式 TLS；仅在认证前的瞬时建连/握手失败时回退到 587 STARTTLS。自定义 `smtp_host` 或非 465 端口（含显式配置 `smtp_port = 587`）严格遵循用户配置，不跨端口回退。证书错误、TLS 协议错误、缺失 STARTTLS、认证拒绝、限流以及提交阶段故障（含 `delivery_uncertain`）均绝不回退或重试。TLS 最低版本为 1.2，认证前强制校验 TLS 握手已完成，禁止明文认证。
+- 登录阶段默认仅验证 IMAP（不阻碍只读登录）；如需同时验证发信认证，可显式使用 `qqmail-cli auth login --verify-smtp`（只认证并 `NOOP`/`QUIT`，不发送邮件）。
 - 所有发送尝试与结果写 SQLite audit 表及内容无关的 JSONL；审计不记录授权码、地址、主题、正文或附件名。
 
 S9 真实发送配额探针尚未运行。只有专用测试邮箱、双重写门（`QQMAIL_CLI_E2E_WRITE=1` + `QQMAIL_CLI_DEDICATED_TEST_ACCOUNT=1`）和自发自收件人条件同时满足时才能触发。
