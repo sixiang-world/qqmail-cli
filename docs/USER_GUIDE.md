@@ -70,7 +70,7 @@ Remove-Item Env:QQMAIL_CLI_READONLY -ErrorAction SilentlyContinue
 
 `auth logout --name <name>` 只删除本地账号引用和本地凭据，不会在 QQ 网页端撤销授权码。彻底作废必须在 QQ 邮箱授权管理页面操作。
 
-无头环境只有显式添加 `--auth-code-env` 时才读取 `QQMAIL_CLI_AUTH_CODE`。环境变量可能进入进程转储、CI 配置或子进程，不应作为日常方案，用完立即清除。
+无头环境只有显式添加 `--auth-code-env` 时才读取 `QQMAIL_CLI_AUTH_CODE`。环境变量可能进入进程转储、CI 配置或子进程，不应作为日常方案，用完立即清除。无头 Linux 云 VM（含 Meta Muse）的完整 D-Bus / GNOME Keyring 配置、VM 更换恢复与排障决策树见 [无头 Linux 与云 VM 部署指南](CLOUD_DEPLOYMENT.md)。
 
 ### 无头 Linux 凭据管理器排查与 `auth keyring-test`
 

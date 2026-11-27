@@ -11,6 +11,7 @@ qqmail-cli 是独立的第三方开源项目，与腾讯及 QQ 邮箱不存在�
 - [功能与设计全景](OVERVIEW.md)：一篇读懂"能做什么、怎么做到的、为什么这样设计"。
 - [项目介绍](INTRODUCTION.md)：解决什么问题、适合谁、安全模型与边界。
 - [完整使用手册](USER_GUIDE.md)：安装、登录、读取、检索、分类、备份、清理和发送。
+- [无头 Linux / 云 VM 与 Muse 部署指南](CLOUD_DEPLOYMENT.md)：受支持网络授权、D-Bus/Keyring 配置、VM 更换恢复与排障决策树。
 - [安全发送](sending.md)：白名单、MIME、SMTP 和 TTY 确认。
 - [Triage 自定义规则](triage-rules.md)：TOML 正则格式与匹配顺序。
 

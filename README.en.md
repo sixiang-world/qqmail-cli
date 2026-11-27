@@ -253,7 +253,7 @@ The key discipline: run `envelope list` once, then hand every id to **one** `mes
 | Cleanup gates | Backup HMAC + local hashes + per-message server truth + typed TTY count | Table-driven gate-failure tests + end-to-end test |
 | Send gates | Full allowlist match + dry-run default + typed TTY `send` (case-insensitive; skipped inside the allowlist only when `auto_send` is on — blacklist, daily cap and readonly still intercept) + one message per run | Local TLS SMTP fixture regressions + autosend invariant tests |
 
-Further reading: [Cleanup safety model](docs/v0.2-safety.md) · [Safe sending](docs/sending.md) · [Security policy](SECURITY.md)
+Further reading: [Cleanup safety model](docs/v0.2-safety.md) · [Safe sending](docs/sending.md) · [Headless Linux & Cloud VM deployment](docs/CLOUD_DEPLOYMENT.md) · [Security policy](SECURITY.md)
 
 ## FAQ
 

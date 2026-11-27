@@ -4,6 +4,16 @@ All notable development changes are recorded here. Formal releases remain owner-
 
 ## Unreleased
 
+### Documentation (2026-11-27 cloud VM and Muse deployment — R06)
+
+- Add `docs/CLOUD_DEPLOYMENT.md` covering supported network authorization,
+  headless Linux D-Bus / GNOME Keyring setup, VM swap dependency recovery,
+  read-only and authorized send verification, an exit-code troubleshooting
+  decision tree, and an explicit verified-vs-unverified capability boundary.
+- Link the cloud deployment guide from `docs/index.md`, `README.md`,
+  `README.en.md`, `docs/USER_GUIDE.md`, and `skills/qqmail-cli/SKILL.md`, and
+  update `docs/roadmap.md` with V0.7.0 implementation status.
+
 ### Added (2026-11-27 stage-by-stage SMTP doctor diagnostics — R03)
 
 - Extend `doctor` with `--smtp`, `--smtp-only`, and `--no-auth` flags for

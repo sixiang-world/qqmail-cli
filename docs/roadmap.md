@@ -1,50 +1,50 @@
 # 开发路线图 / Development roadmap
 
-状态：拟议（2026-11-27）。版本归属是规划目标，不是发布日期或交付承诺。依据：[Muse Agent 实测报告](research/2026-11-27-muse-agent-field-report.md)。本路线图用稳定任务 ID 与独立 Issue 追踪工作，总追踪见 [#5](https://github.com/sixiang-world/qqmail-cli/issues/5)；不重复已有 PR。
+状态：v0.7.0 开发项已于 2026-11-27 完成实现并通过合成夹具回归与三平台 CI（v0.8.0 仍为拟议规划，不承诺发布日期）。依据：[Muse Agent 实测报告](research/2026-11-27-muse-agent-field-report.md)。本路线图用稳定任务 ID 与独立 Issue 追踪工作，总追踪见 [#5](https://github.com/sixiang-world/qqmail-cli/issues/5)；不重复已有 PR。
 
 ## v0.7.0 — Reliability & Cloud Agent Support
 
 ### R01 — 有界网络重试与退避（P0）
 
-Issue: [#6](https://github.com/sixiang-world/qqmail-cli/issues/6)
-- [ ] 分类 DNS/TCP/TLS/协议阶段的错误与 retryable；对明确瞬时、尚未认证或安全的只读失败采用有界指数退避，最多两次额外尝试、遵守整体截止时间；正常域名解析的多地址容错不得绕过平台策略。
-- [ ] SMTP 仅在明确未进入可能投递阶段时允许重试；保留 v0.6.0 不确定投递保护、额度预占及审计，不因重试增加逻辑发送次数。
-- [ ] 验收：合成网络夹具首次握手失败后恢复，调用成功且结构化记录尝试次数、阶段、最终端点；认证错误、证书验证失败、限流及不确定提交不盲目重试。重试耗尽有稳定退出码。
+Issue: [#6](https://github.com/sixiang-world/qqmail-cli/issues/6) · PR: [#16](https://github.com/sixiang-world/qqmail-cli/pull/16)
+- [x] 分类 DNS/TCP/TLS/协议阶段的错误与 retryable；对明确瞬时、尚未认证或安全的只读失败采用有界指数退避，最多两次额外尝试、遵守整体截止时间；正常域名解析的多地址容错不得绕过平台策略。
+- [x] SMTP 仅在明确未进入可能投递阶段时允许重试；保留 v0.6.0 不确定投递保护、额度预占及审计，不因重试增加逻辑发送次数。
+- [x] 验收：合成网络夹具首次握手失败后恢复，调用成功且结构化记录尝试次数、阶段、最终端点；认证错误、证书验证失败、限流及不确定提交不盲目重试。重试耗尽有稳定退出码。
 
 ### R02 — SMTP 可选验证与安全端口回退（P0）
 
-Issue: [#7](https://github.com/sixiang-world/qqmail-cli/issues/7)
-- [ ] 独立报告 IMAP/SMTP 能力；SMTP 验证为显式选择，不能阻碍只读登录。
-- [ ] 评估默认 465 与 587 STARTTLS 的受支持回退，禁止明文认证、禁止降低 TLS 验证；自定义服务器/端口须遵循用户配置，提交不确定后禁止回退。
-- [ ] 验收：合成 465 建连失败、587 STARTTLS 成功时，在明确允许回退的配置下只发送一次；证书错误、STARTTLS 缺失、认证拒绝、提交不确定均按安全策略失败。
+Issue: [#7](https://github.com/sixiang-world/qqmail-cli/issues/7) · PR: [#18](https://github.com/sixiang-world/qqmail-cli/pull/18)
+- [x] 独立报告 IMAP/SMTP 能力；SMTP 验证为显式选择，不能阻碍只读登录。
+- [x] 评估默认 465 与 587 STARTTLS 的受支持回退，禁止明文认证、禁止降低 TLS 验证；自定义服务器/端口须遵循用户配置，提交不确定后禁止回退。
+- [x] 验收：合成 465 建连失败、587 STARTTLS 成功时，在明确允许回退的配置下只发送一次；证书错误、STARTTLS 缺失、认证拒绝、提交不确定均按安全策略失败。
 
 ### R03 — doctor 分阶段诊断（P1）
 
-Issue: [#8](https://github.com/sixiang-world/qqmail-cli/issues/8)
-- [ ] 先核对并复用现有 [PR #2](https://github.com/sixiang-world/qqmail-cli/pull/2) 的 IMAP 诊断成果；不重复实现。
-- [ ] 扩展 SMTP 及凭证存储检查，报告 DNS、TCP、TLS、问候、认证等适用阶段、耗时和稳定错误类别；默认不发送邮件，明确区分无凭证探测与授权验证。
-- [ ] 验收：合成故障逐阶段可识别；JSON 契约向后兼容、不暴露凭证，避免重复高频探测。
+Issue: [#8](https://github.com/sixiang-world/qqmail-cli/issues/8) · PR: [#20](https://github.com/sixiang-world/qqmail-cli/pull/20)
+- [x] 先核对并复用现有 [PR #2](https://github.com/sixiang-world/qqmail-cli/pull/2) 的 IMAP 诊断成果；不重复实现。
+- [x] 扩展 SMTP 及凭证存储检查，报告 DNS、TCP、TLS、问候、认证等适用阶段、耗时和稳定错误类别；默认不发送邮件，明确区分无凭证探测与授权验证。
+- [x] 验收：合成故障逐阶段可识别；JSON 契约向后兼容、不暴露凭证，避免重复高频探测。
 
 ### R04 — 无头 Linux 凭证诊断（P1）
 
-Issue: [#9](https://github.com/sixiang-world/qqmail-cli/issues/9)
-- [ ] 检查 Secret Service/D-Bus 可用性，必要时提供显式且可清理的测试项。
-- [ ] 区分邮箱认证通过但凭证保存失败；提示缺失/锁定/权限等可识别原因与恢复步骤，不伪称登录已完成、不承诺免除重新验证。
-- [ ] 验收：模拟密钥环缺失、锁定、不可写和保存失败，诊断与安全失败行为可测试；不自动回退明文存储。
+Issue: [#9](https://github.com/sixiang-world/qqmail-cli/issues/9) · PR: [#19](https://github.com/sixiang-world/qqmail-cli/pull/19)
+- [x] 检查 Secret Service/D-Bus 可用性，必要时提供显式且可清理的测试项。
+- [x] 区分邮箱认证通过但凭证保存失败；提示缺失/锁定/权限等可识别原因与恢复步骤，不伪称登录已完成、不承诺免除重新验证。
+- [x] 验收：模拟密钥环缺失、锁定、不可写和保存失败，诊断与安全失败行为可测试；不自动回退明文存储。
 
 ### R05 — 配置校验与安全审查（P1）
 
-Issue: [#10](https://github.com/sixiang-world/qqmail-cli/issues/10)
-- [ ] 优先实现只读 config validate、有效策略预览与差异检查，保持脱敏和只读语义。
-- [ ] 白名单或 auto_send 写入口单独评估威胁模型；不能仅用可由 Agent 自行附加的 --confirm 放宽权限，不能把同一用户可写 TOML 误称为不可绕过边界。
-- [ ] 验收：无效 TOML、未知或错误字段、无效策略有明确诊断；不扩大 Agent 权限；任何新增写入口保留可信人工授权与审计。
+Issue: [#10](https://github.com/sixiang-world/qqmail-cli/issues/10) · PR: [#17](https://github.com/sixiang-world/qqmail-cli/pull/17)
+- [x] 优先实现只读 config validate、有效策略预览与差异检查，保持脱敏和只读语义。
+- [x] 白名单或 auto_send 写入口单独评估威胁模型；不能仅用可由 Agent 自行附加的 --confirm 放宽权限，不能把同一用户可写 TOML 误称为不可绕过边界。
+- [x] 验收：无效 TOML、未知或错误字段、无效策略有明确诊断；不扩大 Agent 权限；未知字段下 auto_send 按 fail closed 拒绝。
 
 ### R06 — 云 VM / Muse 部署与排障文档（P1）
 
 Issue: [#11](https://github.com/sixiang-world/qqmail-cli/issues/11)
-- [ ] 记录受支持的网络授权、CLI 安装、密钥环和 D-Bus 依赖、VM 更换与依赖恢复、登录及读写验证；区分已实测与待验证能力。
-- [ ] 提供诊断决策树；不要求硬编码 QQ 节点、改写安全代理或绕过平台策略；明确密钥环解锁与跨 VM 持久化仍需独立验证。
-- [ ] 验收：在授权的无头环境按文档完成安装、登录、只读测试及经许可发信；不将密钥写入日志、提示词或明文配置。
+- [x] 记录受支持的网络授权、CLI 安装、密钥环和 D-Bus 依赖、VM 更换与依赖恢复、登录及读写验证；区分已实测与待验证能力（见 [无头 Linux 与云 VM 部署指南](CLOUD_DEPLOYMENT.md)）。
+- [x] 提供诊断决策树；不要求硬编码 QQ 节点、改写安全代理或绕过平台策略；明确密钥环解锁与跨 VM 持久化仍需独立验证。
+- [ ] 验收（真实无头云 VM 端到端演练）：待在明确授权的真实无头 Linux / Muse 环境按文档完成一次完整安装、登录、只读与经许可发信复核（文档链接、格式与无相对时间检查已通过自动化校验）。
 
 ## v0.8.0 — Performance & Persistent Sessions
 

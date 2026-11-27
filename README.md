@@ -273,7 +273,7 @@ Agent 集成三件套：
 | 清理门禁 | 备份 HMAC + 本地哈希 + 服务器逐封核对 + TTY 键入数量 | 门禁各失败分支表驱动测试 + 端到端测试 |
 | 发送门禁 | 白名单全员命中 + dry-run 默认 + TTY 确认（键入 `send`，大小写不限；账号显式开启 `auto_send` 且收件人不在 `send_blacklist` 时，在每日限额内跳过 TTY 自动完成）+ 单发一封 | 本地 TLS SMTP fixture 回归 |
 
-深入阅读：[清理安全模型](docs/v0.2-safety.md) · [安全发送](docs/sending.md) · [安全策略](SECURITY.md)
+深入阅读：[清理安全模型](docs/v0.2-safety.md) · [安全发送](docs/sending.md) · [无头 Linux 与云 VM 部署](docs/CLOUD_DEPLOYMENT.md) · [安全策略](SECURITY.md)
 
 ## FAQ
 
