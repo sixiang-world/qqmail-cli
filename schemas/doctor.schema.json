@@ -64,6 +64,7 @@
       "enum": [
         "config",
         "credential",
+        "dns",
         "tcp",
         "tls",
         "imap_greeting",

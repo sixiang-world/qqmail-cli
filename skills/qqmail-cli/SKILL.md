@@ -103,8 +103,8 @@ Received inline (CID) images are already listed and downloadable through the att
 | 3 | config | Ask the human to repair configuration. |
 | 10 | authentication/authorization code | Human action; never retry automatically. |
 | 11 | IMAP/SMTP service not enabled | Ask the human to enable the service. |
-| 20 | network | Retry only when `error.retryable` is true, at most twice with backoff. `delivery_uncertain` is never retryable: the server may have accepted the delivery — verify as a human, then decide. |
-| 21 | TLS | Stop and report certificate/time/proxy diagnostics. |
+| 20 | network | Transient pre-auth/pre-submission failures already undergo bounded in-process retry (up to 2 extra attempts) and multi-IP failover; inspect `meta.connection` / `error.context` (`stage`, `endpoint`, `attempts`, `error_category`). Retry externally only when `error.retryable` is true, at most twice with backoff. `delivery_uncertain` is never retryable: the server may have accepted the delivery — verify as a human, then decide. |
+| 21 | TLS | Certificate or TLS protocol verification failure (never auto-retried). Stop and report certificate/time/proxy diagnostics. |
 | 30 | rate limited | Stop; wait 10–15 minutes. |
 | 40 | not found/stale ID | Relist once for stale IDs; otherwise report. |
 | 50 | policy denied | Respect the safety gate; require the indicated human action. |

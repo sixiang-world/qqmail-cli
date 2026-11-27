@@ -1,6 +1,7 @@
 package errmap
 
 import (
+	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"fmt"
@@ -34,6 +35,7 @@ type Error struct {
 	Kind       Kind
 	Message    string
 	Suggestion string
+	Retryable  *bool
 	Context    map[string]any
 	Cause      error
 }
@@ -48,6 +50,13 @@ func (e *Error) Error() string {
 func (e *Error) Unwrap() error { return e.Cause }
 
 func New(kind Kind, message string) *Error { return &Error{Kind: kind, Message: message} }
+
+// WithRetryable returns a shallow copy of e with an explicit retryable override.
+func (e *Error) WithRetryable(retryable bool) *Error {
+	result := *e
+	result.Retryable = &retryable
+	return &result
+}
 
 // WithContext adds structured details without changing the original error.
 func (e *Error) WithContext(values map[string]any) *Error {
@@ -66,9 +75,15 @@ func Classify(err error) *Error {
 	if errors.As(err, &app) {
 		return app
 	}
-	var certErr x509.UnknownAuthorityError
-	if errors.As(err, &certErr) {
-		return &Error{Kind: TLS, Message: "TLS 证书校验失败", Suggestion: "检查系统时间、证书链或企业中间人代理", Cause: err}
+	var (
+		verifyErr  *tls.CertificateVerificationError
+		certErr    x509.UnknownAuthorityError
+		invalidErr x509.CertificateInvalidError
+		hostErr    x509.HostnameError
+		rootsErr   x509.SystemRootsError
+	)
+	if errors.As(err, &verifyErr) || errors.As(err, &certErr) || errors.As(err, &invalidErr) || errors.As(err, &hostErr) || errors.As(err, &rootsErr) {
+		return (&Error{Kind: TLS, Message: "TLS 证书校验失败", Suggestion: "检查系统时间、证书链或企业中间人代理", Cause: err}).WithRetryable(false)
 	}
 	var netErr net.Error
 	if errors.As(err, &netErr) {
@@ -109,6 +124,9 @@ func isUsageErrorText(lower string) bool {
 func Details(err error) (output.Error, int) {
 	app := Classify(err)
 	retryable := app.Kind == Network || app.Kind == RateLimited
+	if app.Retryable != nil {
+		retryable = *app.Retryable
+	}
 	out := output.Error{Code: string(app.Kind), Message: app.Message, Retryable: retryable, Suggestion: app.Suggestion, Context: app.Context}
 	switch app.Kind {
 	case Usage:

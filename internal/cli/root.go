@@ -12,6 +12,7 @@ import (
 	"github.com/situker/qqmail-cli/internal/imapx"
 	"github.com/situker/qqmail-cli/internal/index"
 	"github.com/situker/qqmail-cli/internal/mailmodel"
+	"github.com/situker/qqmail-cli/internal/netx"
 	"github.com/situker/qqmail-cli/internal/output"
 	"github.com/situker/qqmail-cli/internal/policy"
 	"github.com/situker/qqmail-cli/internal/secrets"
@@ -51,6 +52,7 @@ type Runtime struct {
 	started      time.Time
 	current      string
 	resultCode   int
+	connRecorder *netx.ConnectionRecorder
 }
 
 func Execute(build BuildInfo) int {
@@ -149,6 +151,7 @@ func NewRoot(rt *Runtime) *cobra.Command {
 		PersistentPreRun: func(cmd *cobra.Command, _ []string) {
 			rt.started = time.Now()
 			rt.current = commandName(cmd)
+			rt.connRecorder = &netx.ConnectionRecorder{}
 		},
 	}
 	root.SetOut(rt.Out)
@@ -224,7 +227,27 @@ func commandName(cmd *cobra.Command) string {
 }
 
 func (rt *Runtime) context() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.Background(), rt.Timeout)
+	if rt.connRecorder == nil {
+		rt.connRecorder = &netx.ConnectionRecorder{}
+	}
+	ctx := netx.WithConnectionRecorder(context.Background(), rt.connRecorder)
+	return context.WithTimeout(ctx, rt.Timeout)
+}
+
+func (rt *Runtime) connectionMeta() *output.ConnectionMeta {
+	info := rt.connRecorder.Latest()
+	if info == nil {
+		return nil
+	}
+	return &output.ConnectionMeta{
+		Protocol:     info.Protocol,
+		Attempts:     info.Attempts,
+		Stage:        info.Stage,
+		Endpoint:     info.Endpoint,
+		Server:       info.Server,
+		Transport:    info.Transport,
+		FallbackUsed: info.FallbackUsed,
+	}
 }
 
 func (rt *Runtime) loadAccount() (*account.Config, string, account.Named, error) {
@@ -274,7 +297,9 @@ func (rt *Runtime) connectMutator(ctx context.Context) (imapx.Mutator, account.N
 
 func writeResult(rt *Runtime, cmd *cobra.Command, data any, text func(io.Writer) error) error {
 	if rt.JSON {
-		return output.WriteJSON(rt.Out, output.Success(commandName(cmd), data, rt.started))
+		env := output.Success(commandName(cmd), data, rt.started)
+		env.Meta.Connection = rt.connectionMeta()
+		return output.WriteJSON(rt.Out, env)
 	}
 	if text != nil {
 		return text(rt.Out)
@@ -285,6 +310,9 @@ func writeResult(rt *Runtime, cmd *cobra.Command, data any, text func(io.Writer)
 func writeDetailed(rt *Runtime, cmd *cobra.Command, data any, warnings []output.Warning, meta output.Meta) error {
 	if meta.DurationMS == 0 {
 		meta.DurationMS = time.Since(rt.started).Milliseconds()
+	}
+	if meta.Connection == nil {
+		meta.Connection = rt.connectionMeta()
 	}
 	if warnings == nil {
 		warnings = []output.Warning{}

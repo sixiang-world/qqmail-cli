@@ -40,7 +40,24 @@
         "additionalProperties": false
       }
     },
-    "meta": {"type": "object"}
+    "meta": {
+      "type": "object",
+      "properties": {
+        "connection": {
+          "type": "object",
+          "properties": {
+            "protocol": {"type": "string", "enum": ["imap", "smtp"]},
+            "attempts": {"type": "integer", "minimum": 1},
+            "stage": {"type": "string"},
+            "endpoint": {"type": "string"},
+            "server": {"type": "string"},
+            "transport": {"type": "string", "enum": ["implicit_tls", "starttls"]},
+            "fallback_used": {"type": "boolean"}
+          },
+          "additionalProperties": false
+        }
+      }
+    }
   },
   "additionalProperties": false
 }

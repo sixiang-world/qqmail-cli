@@ -23,14 +23,25 @@ type Warning struct {
 	Retryable bool   `json:"retryable"`
 }
 
+type ConnectionMeta struct {
+	Protocol     string `json:"protocol,omitempty"`
+	Attempts     int    `json:"attempts,omitempty"`
+	Stage        string `json:"stage,omitempty"`
+	Endpoint     string `json:"endpoint,omitempty"`
+	Server       string `json:"server,omitempty"`
+	Transport    string `json:"transport,omitempty"`
+	FallbackUsed bool   `json:"fallback_used,omitempty"`
+}
+
 type Meta struct {
-	Account        string   `json:"account,omitempty"`
-	DurationMS     int64    `json:"duration_ms"`
-	Truncated      bool     `json:"truncated"`
-	Parser         string   `json:"parser,omitempty"`
-	SearchMode     string   `json:"search_mode,omitempty"`
-	Skipped        int      `json:"skipped,omitempty"`
-	FiltersApplied []string `json:"filters_applied,omitempty"`
+	Account        string          `json:"account,omitempty"`
+	DurationMS     int64           `json:"duration_ms"`
+	Truncated      bool            `json:"truncated"`
+	Parser         string          `json:"parser,omitempty"`
+	SearchMode     string          `json:"search_mode,omitempty"`
+	Skipped        int             `json:"skipped,omitempty"`
+	FiltersApplied []string        `json:"filters_applied,omitempty"`
+	Connection     *ConnectionMeta `json:"connection,omitempty"`
 }
 
 type Envelope struct {

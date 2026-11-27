@@ -21,17 +21,19 @@ import (
 	"github.com/situker/qqmail-cli/internal/account"
 	"github.com/situker/qqmail-cli/internal/errmap"
 	"github.com/situker/qqmail-cli/internal/mailmodel"
+	"github.com/situker/qqmail-cli/internal/netx"
 )
 
 const (
-	DefaultDialTimeout    = 15 * time.Second
+	DefaultDialTimeout    = netx.DefaultDialTimeout
 	DefaultCommandTimeout = 60 * time.Second
 	MaxMessageBytes       = 64 << 20
 )
 
 const (
-	stageTCP                   = "tcp"
-	stageTLS                   = "tls"
+	stageDNS                   = netx.StageDNS
+	stageTCP                   = netx.StageTCP
+	stageTLS                   = netx.StageTLS
 	stageGreeting              = "imap_greeting"
 	stageCapabilityBeforeLogin = "imap_capability_before_login"
 	stageLogin                 = "imap_login"
@@ -41,7 +43,7 @@ const (
 
 // CompletedDialStages returns the stages known to have passed before a dial failure.
 func CompletedDialStages(failedStage string) []string {
-	stages := []string{stageTCP, stageTLS, stageGreeting, stageCapabilityBeforeLogin, stageLogin, stageCapabilityAfterLogin, stageID}
+	stages := []string{stageDNS, stageTCP, stageTLS, stageGreeting, stageCapabilityBeforeLogin, stageLogin, stageCapabilityAfterLogin, stageID}
 	if index := slices.Index(stages, failedStage); index >= 0 {
 		return stages[:index]
 	}
@@ -82,79 +84,130 @@ type Client struct {
 	commandTimeout time.Duration
 	capBefore      []string
 	capAfter       []string
+	connInfo       netx.ConnectionInfo
+}
+
+// ConnectionInfoOf returns recorded connection telemetry for an IMAP reader
+// without expanding the frozen Reader interface.
+func ConnectionInfoOf(reader Reader) (netx.ConnectionInfo, bool) {
+	client, ok := reader.(*Client)
+	if !ok || client == nil || client.connInfo.Attempts == 0 {
+		return netx.ConnectionInfo{}, false
+	}
+	return client.connInfo, true
+}
+
+type dialOptions struct {
+	tlsOverride    *tls.Config
+	commandTimeout time.Duration
+	dialTimeout    time.Duration
+	tlsTimeout     time.Duration
+	version        string
+	resolver       netx.Resolver
+	dialContext    func(ctx context.Context, network, addr string) (net.Conn, error)
+	retry          netx.RetryConfig
 }
 
 func Dial(ctx context.Context, cfg account.Named, authCode string) (*Client, error) {
-	return dialWithVersion(ctx, cfg, authCode, nil, DefaultCommandTimeout, "dev")
+	return dialWithOptions(ctx, cfg, authCode, dialOptions{commandTimeout: DefaultCommandTimeout, version: "dev"})
 }
 
 func dial(ctx context.Context, cfg account.Named, authCode string, tlsOverride *tls.Config, commandTimeout time.Duration) (*Client, error) {
-	return dialWithVersion(ctx, cfg, authCode, tlsOverride, commandTimeout, "dev")
+	return dialWithOptions(ctx, cfg, authCode, dialOptions{tlsOverride: tlsOverride, commandTimeout: commandTimeout, version: "dev"})
 }
 
 func DialWithVersion(ctx context.Context, cfg account.Named, authCode, version string) (*Client, error) {
-	return dialWithVersion(ctx, cfg, authCode, nil, DefaultCommandTimeout, version)
+	return dialWithOptions(ctx, cfg, authCode, dialOptions{commandTimeout: DefaultCommandTimeout, version: version})
 }
 
-func dialWithVersion(ctx context.Context, cfg account.Named, authCode string, tlsOverride *tls.Config, commandTimeout time.Duration, version string) (*Client, error) {
-	dialer := &net.Dialer{Timeout: DefaultDialTimeout}
-	plain, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(cfg.IMAPHost, fmt.Sprint(cfg.IMAPPort)))
-	if err != nil {
-		return nil, dialStageError(stageTCP, &errmap.Error{Kind: errmap.Network, Message: "无法连接 IMAP 服务器", Context: map[string]any{"server": cfg.IMAPHost + ":" + fmt.Sprint(cfg.IMAPPort)}, Cause: err})
-	}
-	tlsConfig := tlsOverride
-	if tlsConfig == nil {
-		tlsConfig = &tls.Config{ServerName: cfg.IMAPHost, MinVersion: tls.VersionTLS12}
-	} else {
-		tlsConfig = tlsConfig.Clone()
-		if tlsConfig.ServerName == "" {
-			tlsConfig.ServerName = cfg.IMAPHost
-		}
-		if tlsConfig.MinVersion == 0 {
-			tlsConfig.MinVersion = tls.VersionTLS12
-		}
-	}
-	tlsConn := tls.Client(plain, tlsConfig)
-	if deadline, ok := deadlineFor(ctx, DefaultCommandTimeout); ok {
-		_ = plain.SetDeadline(deadline)
-	}
-	if err := tlsConn.HandshakeContext(ctx); err != nil {
-		_ = plain.Close()
-		return nil, dialStageError(stageTLS, &errmap.Error{Kind: errmap.TLS, Message: "TLS 握手或证书校验失败", Suggestion: "检查系统时间、证书链或企业中间人代理", Context: map[string]any{"server": cfg.IMAPHost + ":" + fmt.Sprint(cfg.IMAPPort)}, Cause: err})
-	}
-	client := &Client{conn: tlsConn, commandTimeout: commandTimeout}
-	transport := &imapTransport{Conn: tlsConn}
-	client.raw = imapclient.New(transport, &imapclient.Options{WordDecoder: &mime.WordDecoder{CharsetReader: charset.Reader}})
+type preAuthClient struct {
+	client      *Client
+	transport   *imapTransport
+	server      string
+	endpoint    string
+	resolvedIPs []string
+}
 
-	if err := client.setDeadline(ctx); err != nil {
-		client.close()
-		return nil, dialStageError(stageGreeting, err)
+func dialWithOptions(ctx context.Context, cfg account.Named, authCode string, opts dialOptions) (*Client, error) {
+	if opts.commandTimeout <= 0 {
+		opts.commandTimeout = DefaultCommandTimeout
 	}
-	stopBefore := client.watchdog(ctx)
-	// New starts the response reader asynchronously. Wait for the greeting
-	// before sending CAPABILITY: some servers do not accept earlier commands.
-	if err := client.raw.WaitGreeting(); err != nil {
+	if opts.version == "" {
+		opts.version = "dev"
+	}
+	server := net.JoinHostPort(cfg.IMAPHost, fmt.Sprint(cfg.IMAPPort))
+	dialCfg := netx.DialConfig{
+		Host:        cfg.IMAPHost,
+		Port:        cfg.IMAPPort,
+		TLSConfig:   opts.tlsOverride,
+		DialTimeout: opts.dialTimeout,
+		TLSTimeout:  opts.tlsTimeout,
+		Resolver:    opts.resolver,
+		DialContext: opts.dialContext,
+	}
+
+	// Only pre-authentication stages (DNS, TCP, transient TLS handshake IO,
+	// greeting, pre-login CAPABILITY) are eligible for bounded retry. Auth
+	// failures, TLS certificate/protocol errors, rate limits, and post-login
+	// stages are never automatically retried.
+	pre, attempts, err := netx.Retry(ctx, opts.retry, func(attemptCtx context.Context, _ int) (*preAuthClient, error) {
+		tlsRes, dialErr := netx.DialTLS(attemptCtx, dialCfg)
+		if dialErr != nil {
+			return nil, dialErr
+		}
+		client := &Client{conn: tlsRes.Conn, commandTimeout: opts.commandTimeout}
+		transport := &imapTransport{Conn: tlsRes.Conn}
+		client.raw = imapclient.New(transport, &imapclient.Options{WordDecoder: &mime.WordDecoder{CharsetReader: charset.Reader}})
+
+		if err := client.setDeadline(attemptCtx); err != nil {
+			client.close()
+			return nil, dialEndpointStageError(stageGreeting, server, tlsRes.Endpoint, err)
+		}
+		stopBefore := client.watchdog(attemptCtx)
+		// New starts the response reader asynchronously. Wait for the greeting
+		// before sending CAPABILITY: some servers do not accept earlier commands.
+		if err := client.raw.WaitGreeting(); err != nil {
+			stopBefore()
+			client.close()
+			return nil, dialEndpointStageError(stageGreeting, server, tlsRes.Endpoint, &errmap.Error{
+				Kind:    errmap.Network,
+				Message: "等待 IMAP 服务器欢迎消息失败",
+				Context: map[string]any{"server": server, "endpoint": tlsRes.Endpoint, "error_category": "imap_greeting"},
+				Cause:   err,
+			})
+		}
+		before, err := client.raw.Capability().Wait()
 		stopBefore()
-		client.close()
-		return nil, dialStageError(stageGreeting, &errmap.Error{Kind: errmap.Network, Message: "等待 IMAP 服务器欢迎消息失败", Context: map[string]any{"server": cfg.IMAPHost + ":" + fmt.Sprint(cfg.IMAPPort)}, Cause: err})
-	}
-	before, err := client.raw.Capability().Wait()
-	stopBefore()
+		if err != nil {
+			failure := transport.commandFailure(stageCapabilityBeforeLogin, err).WithContext(map[string]any{"server": server, "endpoint": tlsRes.Endpoint})
+			client.close()
+			return nil, failure
+		}
+		client.capBefore = capStrings(before)
+		return &preAuthClient{
+			client:      client,
+			transport:   transport,
+			server:      server,
+			endpoint:    tlsRes.Endpoint,
+			resolvedIPs: tlsRes.ResolvedIPs,
+		}, nil
+	})
 	if err != nil {
-		failure := transport.commandFailure(stageCapabilityBeforeLogin, err)
-		client.close()
-		return nil, failure
+		return nil, err
 	}
-	client.capBefore = capStrings(before)
+
+	client := pre.client
+	transport := pre.transport
+	metaCtx := map[string]any{"server": pre.server, "endpoint": pre.endpoint, "attempts": attempts, "transport": "implicit_tls"}
 
 	if err := client.setDeadline(ctx); err != nil {
 		client.close()
-		return nil, dialStageError(stageLogin, err)
+		return nil, dialStageError(stageLogin, err).WithContext(metaCtx)
 	}
 	stopLogin := client.watchdog(ctx)
 	if err := client.raw.Login(cfg.Email, authCode).Wait(); err != nil {
 		stopLogin()
-		failure := dialStageError(stageLogin, classifyLoginError(err, cfg, transport.interrupted(err)))
+		failure := dialStageError(stageLogin, classifyLoginError(err, cfg, transport.interrupted(err))).WithContext(metaCtx)
 		client.close()
 		return nil, failure
 	}
@@ -162,13 +215,13 @@ func dialWithVersion(ctx context.Context, cfg account.Named, authCode string, tl
 
 	if err := client.setDeadline(ctx); err != nil {
 		client.close()
-		return nil, dialStageError(stageCapabilityAfterLogin, err)
+		return nil, dialStageError(stageCapabilityAfterLogin, err).WithContext(metaCtx)
 	}
 	stopAfter := client.watchdog(ctx)
 	after, err := client.raw.Capability().Wait()
 	stopAfter()
 	if err != nil {
-		failure := transport.commandFailure(stageCapabilityAfterLogin, err)
+		failure := transport.commandFailure(stageCapabilityAfterLogin, err).WithContext(metaCtx)
 		client.close()
 		return nil, failure
 	}
@@ -176,22 +229,40 @@ func dialWithVersion(ctx context.Context, cfg account.Named, authCode string, tl
 	if after.Has(imap.CapID) {
 		if err := client.setDeadline(ctx); err != nil {
 			client.close()
-			return nil, dialStageError(stageID, err)
+			return nil, dialStageError(stageID, err).WithContext(metaCtx)
 		}
 		stopID := client.watchdog(ctx)
-		_, err := client.raw.ID(&imap.IDData{Name: "qqmail-cli", Version: version}).Wait()
+		_, err := client.raw.ID(&imap.IDData{Name: "qqmail-cli", Version: opts.version}).Wait()
 		stopID()
 		if err != nil {
-			failure := transport.commandFailure(stageID, fmt.Errorf("IMAP ID failed: %w", err))
+			failure := transport.commandFailure(stageID, fmt.Errorf("IMAP ID failed: %w", err)).WithContext(metaCtx)
 			client.close()
 			return nil, failure
 		}
 	}
+	client.connInfo = netx.ConnectionInfo{
+		Protocol:    "imap",
+		Attempts:    attempts,
+		Stage:       "imap_ready",
+		Endpoint:    pre.endpoint,
+		Server:      pre.server,
+		Transport:   "implicit_tls",
+		ResolvedIPs: pre.resolvedIPs,
+	}
+	netx.RecordConnection(ctx, client.connInfo)
 	return client, nil
 }
 
 func dialStageError(stage string, cause error) *errmap.Error {
 	return errmap.Classify(cause).WithContext(map[string]any{"stage": stage})
+}
+
+func dialEndpointStageError(stage, server, endpoint string, cause error) *errmap.Error {
+	ctx := map[string]any{"stage": stage, "server": server}
+	if endpoint != "" {
+		ctx["endpoint"] = endpoint
+	}
+	return errmap.Classify(cause).WithContext(ctx)
 }
 
 // The go-imap decoder can format socket errors with %v, removing their types.

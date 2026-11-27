@@ -28,7 +28,7 @@ func TestDoctorFailureReportsCompletedCheckNames(t *testing.T) {
 	}{
 		{name: "missing config", stage: "config", path: filepath.Join(t.TempDir(), "missing.toml"), code: "config", wantExit: 3},
 		{name: "missing credential", stage: "credential", path: configPath, code: "auth_code_missing", completed: []string{"config"}, wantExit: 10},
-		{name: "login failure", stage: "imap_login", path: configPath, code: "auth_failed", secret: fixtureSecret, completed: []string{"config", "credential", "tcp", "tls", "imap_greeting", "imap_capability_before_login"}, wantExit: 10},
+		{name: "login failure", stage: "imap_login", path: configPath, code: "auth_failed", secret: fixtureSecret, completed: []string{"config", "credential", "dns", "tcp", "tls", "imap_greeting", "imap_capability_before_login"}, wantExit: 10},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var out bytes.Buffer
