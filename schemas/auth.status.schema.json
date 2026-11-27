@@ -1,1 +1,80 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://github.com/sixiang-world/qqmail-cli/schemas/auth.status.schema.json","allOf":[{"$ref":"envelope-common.schema.json"},{"properties":{"command":{"const":"auth.status"},"data":{"type":"object","required":["name","email","configured","credential_present","credential_source","config_path","custom_server"]}}}]}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sixiang-world/qqmail-cli/schemas/auth.status.schema.json",
+  "allOf": [
+    {
+      "$ref": "envelope-common.schema.json"
+    },
+    {
+      "properties": {
+        "command": {
+          "const": "auth.status"
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "name",
+            "email",
+            "configured",
+            "credential_present",
+            "credential_source",
+            "config_path",
+            "custom_server"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "email": {
+              "type": "string"
+            },
+            "configured": {
+              "type": "boolean"
+            },
+            "credential_present": {
+              "type": "boolean"
+            },
+            "credential_source": {
+              "type": "string"
+            },
+            "config_path": {
+              "type": "string"
+            },
+            "custom_server": {
+              "type": "boolean"
+            },
+            "credential_store_status": {
+              "enum": [
+                "ok",
+                "not_found",
+                "error"
+              ]
+            },
+            "credential_store_reason": {
+              "enum": [
+                "no_session_bus",
+                "service_unavailable",
+                "locked",
+                "permission_denied",
+                "timeout",
+                "unknown"
+              ]
+            },
+            "credential_store_suggestion": {
+              "type": "string"
+            },
+            "credential_store_observed": {
+              "type": "string"
+            },
+            "credential_store_platform": {
+              "type": "string"
+            },
+            "dbus_session_bus_set": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

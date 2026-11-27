@@ -4,6 +4,29 @@ All notable development changes are recorded here. Formal releases remain owner-
 
 ## Unreleased
 
+### Added (2026-11-27 credential store diagnostics — R04)
+
+- Classify system credential store (`go-keyring`) failures into stable `reason`
+  values (`no_session_bus`, `service_unavailable`, `locked`, `permission_denied`,
+  `timeout`, `unknown`) with platform-specific recovery guidance, bounded
+  per-operation timeouts (15s default), and reusable `internal/secrets` helpers
+  (`DiagnoseEnvironment`, `ClassifyKeyringError`, `ProbeKeyring`).
+- Distinguish IMAP authentication success from credential store save failure in
+  `auth login`: when saving to the system credential store fails, report
+  `stage: "credential_store"`, `imap_verified: true`, `credential_saved: false`,
+  `config_saved: false` without writing account configuration or claiming login
+  completed.
+- Add `auth keyring-test` (`mutate` risk, refused under `QQMAIL_CLI_READONLY`
+  and `--auth-code-env`) to run an explicit, cleanable write/read/compare/delete
+  probe against the system credential store using a non-email probe account
+  without touching real credentials or contacting the mail server, with embedded
+  schema `schemas/auth.keyring-test.schema.json`.
+- Surface non-`auth_code_missing` credential store errors additively in
+  `auth status` (`credential_store_status`, `credential_store_reason`,
+  `credential_store_suggestion`, `credential_store_platform`, optional
+  `dbus_session_bus_set` and `credential_store_observed`) while preserving
+  existing required fields and exit codes.
+
 ### Added (2026-11-27 configuration validation and policy review — R05)
 
 - `config validate`: strictly parses `config.toml` (`--config` or `--file`, never treating a missing file as valid) and reports structured diagnostics (`severity`, `code`, `path`, `message`, optional `line`/`column`) for TOML syntax errors, unknown/misspelled fields, type mismatches, unsupported `schema`, missing/unknown `default_account`, invalid account names/emails/hosts/ports, malformed `send_allowlist`/`send_blacklist` entries (including unsupported wildcards in `send_blacklist`), negative or zero `daily_auto_limit`, broad public-domain allowlist wildcards, redundant blacklist entries, custom server endpoints, and `auto_send = true` with an empty allowlist. Exits 0 on valid configs (with or without warnings) and exits 3 (`config`) with `error.context.diagnostics` when any error is present.

@@ -1,0 +1,219 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sixiang-world/qqmail-cli/schemas/auth.keyring-test.schema.json",
+  "allOf": [
+    {
+      "$ref": "envelope-common.schema.json"
+    },
+    {
+      "properties": {
+        "command": {
+          "const": "auth.keyring-test"
+        }
+      },
+      "if": {
+        "properties": {
+          "ok": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "credential_store",
+              "service",
+              "probe_account",
+              "platform",
+              "environment",
+              "steps",
+              "cleanup_attempted",
+              "cleanup_ok"
+            ],
+            "properties": {
+              "credential_store": {
+                "type": "string"
+              },
+              "service": {
+                "type": "string"
+              },
+              "probe_account": {
+                "type": "string"
+              },
+              "platform": {
+                "type": "string"
+              },
+              "environment": {
+                "$ref": "#/$defs/environment"
+              },
+              "steps": {
+                "$ref": "#/$defs/steps"
+              },
+              "cleanup_attempted": {
+                "type": "boolean"
+              },
+              "cleanup_ok": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "type": "object",
+            "properties": {
+              "context": {
+                "type": "object",
+                "properties": {
+                  "credential_store": {
+                    "type": "string"
+                  },
+                  "service": {
+                    "type": "string"
+                  },
+                  "probe_account": {
+                    "type": "string"
+                  },
+                  "platform": {
+                    "type": "string"
+                  },
+                  "dbus_session_bus_set": {
+                    "type": "boolean"
+                  },
+                  "reason": {
+                    "$ref": "#/$defs/reason"
+                  },
+                  "observed": {
+                    "type": "string"
+                  },
+                  "failed_step": {
+                    "enum": [
+                      "set",
+                      "get",
+                      "compare",
+                      "delete"
+                    ]
+                  },
+                  "steps": {
+                    "$ref": "#/$defs/steps"
+                  },
+                  "cleanup_attempted": {
+                    "type": "boolean"
+                  },
+                  "cleanup_ok": {
+                    "type": "boolean"
+                  },
+                  "environment": {
+                    "$ref": "#/$defs/environment"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "reason": {
+      "enum": [
+        "no_session_bus",
+        "service_unavailable",
+        "locked",
+        "permission_denied",
+        "timeout",
+        "unknown"
+      ]
+    },
+    "step": {
+      "type": "object",
+      "required": [
+        "status",
+        "duration_ms"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "skipped"
+          ]
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reason": {
+          "$ref": "#/$defs/reason"
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
+    },
+    "steps": {
+      "type": "object",
+      "required": [
+        "set",
+        "get",
+        "compare",
+        "delete"
+      ],
+      "properties": {
+        "set": {
+          "$ref": "#/$defs/step"
+        },
+        "get": {
+          "$ref": "#/$defs/step"
+        },
+        "compare": {
+          "$ref": "#/$defs/step"
+        },
+        "delete": {
+          "$ref": "#/$defs/step"
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "required": [
+        "platform",
+        "credential_store",
+        "ready"
+      ],
+      "properties": {
+        "platform": {
+          "type": "string"
+        },
+        "credential_store": {
+          "type": "string"
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "reason": {
+          "$ref": "#/$defs/reason"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "suggestion": {
+          "type": "string"
+        },
+        "dbus_session_bus_set": {
+          "type": "boolean"
+        },
+        "dbus_socket_exists": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

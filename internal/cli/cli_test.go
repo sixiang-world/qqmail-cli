@@ -252,6 +252,7 @@ func TestReadonlyEnvironmentBlocksEveryMutatingCommandBeforeDial(t *testing.T) {
 	commands := [][]string{
 		{"--config", configPath, "auth", "login", "--email", "user@qq.com", "--auth-code-stdin"},
 		{"--config", configPath, "auth", "logout", "--name", "personal"},
+		{"--config", configPath, "auth", "keyring-test"},
 		{"--config", configPath, "account", "use", "personal"},
 		{"--config", configPath, "attachment", "download", id, "all", "--output", dir},
 		{"--config", configPath, "attachment", "download", id, "all", "--output", dir, "--image-extension"},

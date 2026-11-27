@@ -21,7 +21,7 @@ var authCodePattern = regexp.MustCompile(`^[A-Za-z0-9]{16}$`)
 
 func newAuthCommand(rt *Runtime) *cobra.Command {
 	auth := requireSubcommand(&cobra.Command{Use: "auth", Short: "Manage QQ Mail authorization"})
-	auth.AddCommand(newAuthLoginCommand(rt), newAuthStatusCommand(rt), newAuthLogoutCommand(rt))
+	auth.AddCommand(newAuthLoginCommand(rt), newAuthStatusCommand(rt), newAuthLogoutCommand(rt), newAuthKeyringTestCommand(rt))
 	return auth
 }
 
@@ -130,7 +130,7 @@ func newAuthLoginCommand(rt *Runtime) *cobra.Command {
 			data["smtp_extensions"] = smtpRes.Extensions
 		}
 		if err := rt.Secrets.Set(email, authCode); err != nil {
-			return err
+			return authLoginCredentialSaveError(rt.Secrets.Source(), err)
 		}
 		if err := cfg.Save(path); err != nil {
 			_ = rt.Secrets.Delete(email)
@@ -183,9 +183,9 @@ func newAuthStatusCommand(rt *Runtime) *cobra.Command {
 		_, secretErr := provider.Get(named.Email)
 		present := secretErr == nil
 		data := map[string]any{"name": named.Name, "email": named.Email, "configured": true, "credential_present": present, "credential_source": provider.Source(), "config_path": path, "custom_server": named.IMAPHost != "imap.qq.com" || named.IMAPPort != 993}
+		populateAuthStatusCredentialStore(data, secretErr)
 		return writeResult(rt, cmd, data, func(w io.Writer) error {
-			_, err := fmt.Fprintf(w, "%s <%s> configured=%t credential=%t (%s)\n", named.Name, named.Email, true, present, provider.Source())
-			return err
+			return writeAuthStatusHuman(w, named, provider.Source(), present, data)
 		})
 	}
 	return cmd
