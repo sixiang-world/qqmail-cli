@@ -4,6 +4,22 @@ All notable development changes are recorded here. Formal releases remain owner-
 
 ## Unreleased
 
+### Added (2026-11-27 stage-by-stage SMTP doctor diagnostics — R03)
+
+- Extend `doctor` with `--smtp`, `--smtp-only`, and `--no-auth` flags for
+  single-pass, stage-by-stage IMAP and SMTP diagnostics (`smtp_dns`,
+  `smtp_tcp`, `smtp_tls`, `smtp_greeting`, `smtp_ehlo`, `smtp_starttls`,
+  `smtp_auth`) reporting per-stage `duration_ms`, `endpoint`, `transport`,
+  `error_category`, and advertised SMTP extensions without ever sending mail.
+- Clearly distinguish unauthenticated network/protocol probes
+  (`auth_mode: "unauthenticated"`, `--no-auth`, usable even before account
+  configuration) from authorized verification (`auth_mode: "authenticated"`),
+  and include non-invasive `credential_store` environment readiness from
+  `internal/secrets.DiagnoseEnvironment()`.
+- Expand `doctor.schema.json` additively with SMTP stages and structured
+  `auth_mode`, `imap`, `smtp`, and `credential_store` diagnostic sections while
+  keeping default `doctor` behavior and required fields backward compatible.
+
 ### Added (2026-11-27 credential store diagnostics — R04)
 
 - Classify system credential store (`go-keyring`) failures into stable `reason`

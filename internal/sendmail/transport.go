@@ -429,10 +429,12 @@ func dialEndpointOptions(ctx context.Context, host string, port int, tlsConfig *
 // STARTTLS failures without re-implementing go-smtp's wire parser.
 type smtpStageConn struct {
 	net.Conn
-	phase atomic.Int32 // 0 = greeting, 1 = ehlo, 2 = starttls
+	phase      atomic.Int32 // 0 = greeting, 1 = ehlo, 2 = starttls
+	firstWrite atomic.Int64 // unix nanos of first client command write (after 220 greeting)
 }
 
 func (c *smtpStageConn) Write(p []byte) (int, error) {
+	c.firstWrite.CompareAndSwap(0, time.Now().UnixNano())
 	upper := strings.ToUpper(strings.TrimSpace(string(p)))
 	switch {
 	case strings.HasPrefix(upper, "STARTTLS"):
@@ -441,6 +443,15 @@ func (c *smtpStageConn) Write(p []byte) (int, error) {
 		c.phase.Store(1)
 	}
 	return c.Conn.Write(p)
+}
+
+func (c *smtpStageConn) greetingDuration(started time.Time) time.Duration {
+	if ns := c.firstWrite.Load(); ns > 0 {
+		if d := time.Unix(0, ns).Sub(started); d > 0 {
+			return d
+		}
+	}
+	return 0
 }
 
 func (c *smtpStageConn) stage() string {

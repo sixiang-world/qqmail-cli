@@ -27,7 +27,100 @@
               "capabilities_before_login",
               "capabilities_after_login",
               "readonly"
-            ]
+            ],
+            "properties": {
+              "checks": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "name",
+                    "status",
+                    "duration_ms"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "duration_ms": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "suggestion": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "capabilities_before_login": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "capabilities_after_login": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "readonly": {
+                "type": "boolean"
+              },
+              "auth_mode": {
+                "type": "string",
+                "enum": [
+                  "authenticated",
+                  "unauthenticated"
+                ]
+              },
+              "credential_store": {
+                "type": "object",
+                "required": [
+                  "platform",
+                  "credential_store",
+                  "ready"
+                ],
+                "properties": {
+                  "platform": {
+                    "type": "string"
+                  },
+                  "credential_store": {
+                    "type": "string"
+                  },
+                  "ready": {
+                    "type": "boolean"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "detail": {
+                    "type": "string"
+                  },
+                  "suggestion": {
+                    "type": "string"
+                  },
+                  "dbus_session_bus_set": {
+                    "type": "boolean"
+                  },
+                  "dbus_socket_exists": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              "imap": {
+                "$ref": "#/$defs/protocolDiagnostic"
+              },
+              "smtp": {
+                "$ref": "#/$defs/protocolDiagnostic"
+              }
+            }
           }
         }
       },
@@ -50,6 +143,26 @@
                     "items": {
                       "$ref": "#/$defs/stage"
                     }
+                  },
+                  "auth_mode": {
+                    "type": "string",
+                    "enum": [
+                      "authenticated",
+                      "unauthenticated"
+                    ]
+                  },
+                  "protocol": {
+                    "type": "string",
+                    "enum": [
+                      "imap",
+                      "smtp"
+                    ]
+                  },
+                  "stages": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/stageReport"
+                    }
                   }
                 }
               }
@@ -71,8 +184,112 @@
         "imap_capability_before_login",
         "imap_login",
         "imap_capability_after_login",
-        "imap_id"
+        "imap_id",
+        "smtp_dns",
+        "smtp_tcp",
+        "smtp_tls",
+        "smtp_greeting",
+        "smtp_ehlo",
+        "smtp_starttls",
+        "smtp_auth"
       ]
+    },
+    "stageReport": {
+      "type": "object",
+      "required": [
+        "stage",
+        "status",
+        "duration_ms"
+      ],
+      "properties": {
+        "stage": {
+          "$ref": "#/$defs/stage"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail",
+            "skipped"
+          ]
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "endpoint": {
+          "type": "string"
+        },
+        "transport": {
+          "type": "string"
+        },
+        "error_category": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
+    },
+    "protocolDiagnostic": {
+      "type": "object",
+      "required": [
+        "checked",
+        "ok",
+        "server"
+      ],
+      "properties": {
+        "checked": {
+          "type": "boolean"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "auth_mode": {
+          "type": "string",
+          "enum": [
+            "authenticated",
+            "unauthenticated"
+          ]
+        },
+        "server": {
+          "type": "string"
+        },
+        "endpoint": {
+          "type": "string"
+        },
+        "transport": {
+          "type": "string"
+        },
+        "fallback_used": {
+          "type": "boolean"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "stages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/stageReport"
+          }
+        },
+        "extensions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "primary_stages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/stageReport"
+          }
+        },
+        "primary_error": {
+          "type": "string"
+        }
+      }
     }
   }
 }

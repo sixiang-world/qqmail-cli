@@ -53,9 +53,11 @@ Remove-Item Env:QQMAIL_CLI_READONLY -ErrorAction SilentlyContinue
 ```powershell
 .\bin\qqmail-cli.exe auth status --json
 .\bin\qqmail-cli.exe doctor --json
+.\bin\qqmail-cli.exe doctor --smtp --json
+.\bin\qqmail-cli.exe doctor --smtp-only --no-auth --json
 ```
 
-连接诊断失败时，`doctor --json` 的 `error.context.stage` 标出失败阶段。`error.context.completed_checks` 列出此前完成的阶段名称。按发生顺序为 `config`、`credential`、`tcp`、`tls`、`imap_greeting`、`imap_capability_before_login`、`imap_login`、`imap_capability_after_login`，以及服务器支持时的 `imap_id`。例如，`imap_greeting` 表示 TLS 已完成，但客户端还未收到可用的 IMAP 欢迎消息。
+连接诊断失败时，`doctor --json` 的 `error.context.stage` 标出失败阶段，`error.context.completed_checks` 列出此前完成的阶段名称，`error.context.stages` 记录各阶段耗时与错误类别。IMAP 阶段按顺序为 `config`、`credential`、`dns`、`tcp`、`tls`、`imap_greeting`、`imap_capability_before_login`、`imap_login`、`imap_capability_after_login` 及可选 `imap_id`；加上 `--smtp` 或 `--smtp-only` 后会以单次探测逐阶段检查 SMTP（`smtp_dns`、`smtp_tcp`、`smtp_tls`/`smtp_starttls`、`smtp_greeting`、`smtp_ehlo`、授权模式下的 `smtp_auth`），绝不发信也不进行高频重复探测。加上 `--no-auth` 执行无凭证网络探测（`auth_mode: "unauthenticated"`），未配置账号或凭据异常时也可定位网络阶段故障。
 
 管理多个账号：
 
