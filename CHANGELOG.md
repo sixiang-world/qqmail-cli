@@ -4,6 +4,8 @@ All notable development changes are recorded here. Formal releases remain owner-
 
 ## Unreleased
 
+## 0.7.0 — 2026-11-27
+
 ### Security (2026-11-27 release hardening)
 
 - Refuse to rewrite `config.toml` (`Config.Save`, `account use`, `auth login`,

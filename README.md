@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/sixiang-world/qqmail-cli/actions/workflows/ci.yaml/badge.svg)](https://github.com/sixiang-world/qqmail-cli/actions/workflows/ci.yaml)
 [![Release](https://img.shields.io/github/v/release/sixiang-world/qqmail-cli)](https://github.com/sixiang-world/qqmail-cli/releases)
-[![Go](https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go&logoColor=white)](go.mod)
+[![Go](https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go&logoColor=white)](go.mod)
 [![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
 **简体中文** · [English](README.en.md)
@@ -90,7 +90,16 @@ $ qqmail-cli message show "m1_eyJmIjoiSU5CT1giLCJ2IjoxNDI1LCJ1Ijo4MzQ3fQ" \
 - **内嵌图读取闭环** —— `multipart/related` 邮件的 CID 图片可列出、可下载、转发不丢图。
 - **可验证的诚实** —— QQ 搜索方言与草稿箱位置来自只读探针实测（[spikes/imap-dialect-probe](spikes/imap-dialect-probe/)），结论落档 `docs/compat/`；文件夹名编码修正为 RFC 3501 Modified UTF-7 并与 go-imap 序列化器做了差分验证。
 
-### v0.6.1
+### v0.7.0
+
+- **网络可靠性与有界重试** —— `internal/netx` 实现分阶段 DNS/TCP/TLS 建连、正常操作系统多 IP 故障转移、连接前/提交前瞬时故障指数退避重试（至多 2 次额外重试）与无凭据 `meta.connection` 遥测；TLS 证书错误、认证失败、限流与 SMTP 投递不确定绝不自动重试。
+- **SMTP 可选验证与安全端口回退** —— 新增 `auth login --verify-smtp`（默认仍只验 IMAP）；仅在默认 `smtp.qq.com:465` 遇瞬时连接故障时回退 587 STARTTLS，并强校验 STARTTLS 升级与 TLS 握手完成后才允许认证。
+- **分阶段单次连接诊断** —— `doctor` 扩展 `--smtp`、`--smtp-only`、`--no-auth` 与凭据环境就绪检查，生产认证与无认证路径统一走单次探测；`--no-auth` 明确输出 `tls_probe` 与 `authenticated: false`，不误报登录成功。
+- **无头 Linux 凭据诊断与超时保护** —— 对 `go-keyring` 错误分类并设 15 秒上限，新增 `auth keyring-test`（唯一非邮箱探针项写/读/比对/删闭环），明确区分明确失败与超时结果不确定（`outcome_uncertain: true`），绝不静默回退明文文件。
+- **配置校验、策略审查与防覆盖保护** —— 新增纯本地只读 `config validate`、`config policy`、`config diff`；配置文件存在未知字段（如拼错 `send_blaklist`）时 `auto_send` 自动 fail-closed 且 `account use`/`auth login`/`auth logout` 拒绝重写，防止静默丢弃安全策略字段。
+- **云端无头 VM 部署指南** —— 新增 [无头 Linux 与云 VM 部署指南](docs/CLOUD_DEPLOYMENT.md)，覆盖受支持网络授权、D-Bus/GNOME Keyring 配置、VM 更换恢复与排障决策树。
+
+### v0.6.1（已发布）
 
 - **分阶段连接诊断** —— `doctor --json` 报告 IMAP 连接失败阶段及已完成的检查。
 - **图片附件扩展名** —— 可选 `attachment download --image-extension` 根据文件字节补全匹配的图片后缀，默认行为不变。
@@ -332,7 +341,7 @@ Agent 集成三件套：
 
 ## 项目状态
 
-代码版本为 `0.6.1`（[Releases](https://github.com/sixiang-world/qqmail-cli/releases)）。版本变更见 [CHANGELOG](CHANGELOG.md)，真实 QQ 服务器的脱敏兼容性观察见 [兼容性记录](docs/compat/README.md)。
+代码版本为 `0.7.0`（[Releases](https://github.com/sixiang-world/qqmail-cli/releases)）。版本变更见 [CHANGELOG](CHANGELOG.md)，真实 QQ 服务器的脱敏兼容性观察见 [兼容性记录](docs/compat/README.md)。
 
 ## 参与贡献
 
